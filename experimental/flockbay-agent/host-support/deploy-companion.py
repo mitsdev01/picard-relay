@@ -22,7 +22,8 @@ changed = False
 try:
     if snapshot() != before:
         raise RuntimeError('state_changed_during_quiesce')
-    shutil.copytree(state, backup/'state')
+    # A stopped Unix control socket is an IPC endpoint, not durable state.
+    shutil.copytree(state, backup/'state',ignore=shutil.ignore_patterns('control.sock'))
     shutil.copytree(live, backup/'code')
     shutil.copytree('/var/lib/picard-flockbay-recovery/source', backup/'recovery-source')
     shutil.copytree(source, backup/'candidate')
