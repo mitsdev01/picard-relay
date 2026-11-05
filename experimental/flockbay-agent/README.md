@@ -19,6 +19,9 @@ For repeatable agent access without web login, use the installed `picard.mjs` CL
 The deployment is a separate systemd service `picard-flockbay-agent`. It does not modify the original runtime or enroll the host updater. Rollback stops/disables that service and restores the checkpointed Caddy config; retain SQLite evidence. Windows Start/Stop scripts supervise only the owned bridge process. The bridge is not installed as a login task; run Start after reboot and keep Flockbay open on the pinned game.
 # Maintained companion and qualified updates
 
+See [the installed update verification and recovery record](UPDATE-VERIFICATION-2026-11-05.md)
+for the tested source, live v1.0.31 installation, retained evidence and boundaries.
+
 The companion is maintained separately from Brian's signed 20-file runtime.
 Local branch `codex/companion-upgrade-gates` preserves the previous implementation
 before changes. No source is automatically pushed to Brian's repository.
