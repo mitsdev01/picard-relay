@@ -6,6 +6,9 @@ import {requestJson} from './transport.mjs';
 import {allowed,pause} from './agent.mjs';
 import {validateFlockbay} from './policy.mjs';
 import {verifyProjectStatus} from './guard.mjs';
+import {codeIdentity} from './release-gate.mjs';
+import {fileURLToPath} from 'node:url';
+const workerHash=codeIdentity(fileURLToPath(new URL('.',import.meta.url))).sha256;
 const config=JSON.parse(readFileSync(process.argv[2],'utf8'));
 const connection=validateFlockbay(config.connection),origin=new URL(config.origin);
 if(origin.protocol!=='https:'||origin.pathname!=='/'||origin.username||origin.password)throw Error('invalid_origin');
@@ -33,7 +36,7 @@ const heartbeatTimer=setInterval(async()=>{if(!registered||heartbeatPending)retu
 console.log('Picard live Flockbay bridge started; pinned project verified.');
 try{while(true){
  try{
-  if(!registered){await post('register',{project:config.project,tools});registered=true;}
+  if(!registered){await post('register',{project:config.project,tools,workerHash});registered=true;}
   // Redeliver only durable results, never repeat a tool invocation.
   for(const r of db.prepare("SELECT * FROM calls WHERE state IN ('invoked','ready')").all()){
    const result=r.result?JSON.parse(r.result):{uncertain:true,isError:true,content:[{type:'text',text:'Worker restarted during tool invocation. Inspect the game before retrying.'}]};

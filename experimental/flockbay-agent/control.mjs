@@ -4,11 +4,12 @@ import {pathToFileURL} from 'node:url';
 import {validateMission} from './agent.mjs';
 export async function controlRequest(socket,command){
  const {action,id,mission}=command;
- if(!['status','show','events','start','stop','reject','repair'].includes(action))throw Error('unknown_action');
+ if(!['status','show','events','start','stop','reject','repair','maintenance-acquire','maintenance-release'].includes(action))throw Error('unknown_action');
  if(['show','events','stop','reject','repair'].includes(action)&&!/^[a-f0-9-]{36}$/.test(id||''))throw Error('invalid_id');
  if(action==='start')validateMission(mission);
- const path=action==='status'?'/development/api/status':['show','events'].includes(action)?'/development/api/missions/'+id:action==='start'?'/development/api/missions':action==='repair'?'/development/api/repair':action==='reject'?'/development/api/reject':'/development/api/stop';
- const body=action==='start'?JSON.stringify(mission):['reject','repair'].includes(action)?JSON.stringify({id,candidateSha256:command.candidateSha256,reason:command.reason}):action==='stop'?JSON.stringify({id}):null;
+ const maintenance=action.startsWith('maintenance-');
+ const path=maintenance?'/development/api/maintenance':action==='status'?'/development/api/status':['show','events'].includes(action)?'/development/api/missions/'+id:action==='start'?'/development/api/missions':action==='repair'?'/development/api/repair':action==='reject'?'/development/api/reject':'/development/api/stop';
+ const body=maintenance?JSON.stringify({action:action.slice(12),id,...(action==='maintenance-acquire'?{reason:command.reason}:{})}):action==='start'?JSON.stringify(mission):['reject','repair'].includes(action)?JSON.stringify({id,candidateSha256:command.candidateSha256,reason:command.reason}):action==='stop'?JSON.stringify({id}):null;
  const result=await new Promise((resolve,reject)=>{
   const req=http.request({socketPath:socket,path,method:body?'POST':'GET',headers:body?{'Content-Type':'application/json','Content-Length':Buffer.byteLength(body)}:{}},res=>{
    let chunks=[],bytes=0;res.on('data',c=>{bytes+=c.length;if(bytes>4*1024*1024){res.destroy(Error('response_too_large'));return;}chunks.push(c);});res.on('error',reject);res.on('end',()=>{try{const data=JSON.parse(Buffer.concat(chunks).toString());if(res.statusCode!==200)throw Error(data.error||'control_failed');resolve(data);}catch(e){reject(e);}});

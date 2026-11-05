@@ -1,6 +1,6 @@
 import {createHash} from 'node:crypto';
 const hash=s=>createHash('sha256').update(s).digest('hex');
-export function patchHistory(db){
+export function patchHistory(db,assertOpen=()=>{}){
  db.exec(`CREATE TABLE IF NOT EXISTS patch_artifacts(mission TEXT NOT NULL,digest TEXT NOT NULL,artifact TEXT NOT NULL,created INTEGER NOT NULL,PRIMARY KEY(mission,digest));
  CREATE TABLE IF NOT EXISTS patch_repairs(request TEXT PRIMARY KEY,mission TEXT NOT NULL,digest TEXT NOT NULL,feedback TEXT NOT NULL,created INTEGER NOT NULL);`);
  return {
@@ -14,6 +14,7 @@ export function patchHistory(db){
    db.exec('BEGIN IMMEDIATE');
    try{
     if(db.prepare('SELECT request FROM patch_repairs WHERE request=?').get(request)){db.exec('COMMIT');return {started:false,id};}
+    assertOpen();
     const m=db.prepare('SELECT * FROM missions WHERE id=?').get(id);
     if(!m||m.state!=='awaiting_validation')throw Error('candidate_not_reviewable');
     const input=JSON.parse(m.input),artifact=JSON.parse(m.result);

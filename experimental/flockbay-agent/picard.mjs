@@ -12,7 +12,8 @@ try{
   writeFileSync(opts['--out'],JSON.stringify(mission,null,2)+'\n',{flag:'wx',mode:0o600});console.log(JSON.stringify({prepared:true,file:opts['--out'],mission},null,2));
  }else{
   let command;
-  if(['reject','repair'].includes(action)&&args.length===1){const review=JSON.parse(readFileSync(args[0],'utf8'));command={action,id:review.id,candidateSha256:review.candidateSha256,reason:review.reason};}
+  if(['maintenance-acquire','maintenance-release'].includes(action)&&args.length===1){const request=JSON.parse(readFileSync(args[0],'utf8'));command={action,id:request.id,...(action==='maintenance-acquire'?{reason:request.reason}:{})};}
+  else if(['reject','repair'].includes(action)&&args.length===1){const review=JSON.parse(readFileSync(args[0],'utf8'));command={action,id:review.id,candidateSha256:review.candidateSha256,reason:review.reason};}
   else if(action==='status'&&args.length===0)command={action};
   else if(['show','events','stop'].includes(action)&&args.length===1&&/^[a-f0-9-]{36}$/.test(args[0]))command={action,id:args[0]};
   else if(action==='start'&&args.length===2&&args[1]==='--approve'){const mission=JSON.parse(readFileSync(args[0],'utf8'));mission.approved=true;validateMission(mission);command={action,mission};}

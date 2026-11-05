@@ -1,0 +1,12 @@
+{
+ "name": "picard-flockbay-companion",
+ "version": "1.1.0",
+ "private": true,
+ "type": "module",
+ "engines": {"node": ">=24 <25"},
+ "scripts": {
+  "test": "node --test test/*.test.mjs",
+  "test:jitless": "node --jitless --test test/*.test.mjs",
+  "status": "node picard.mjs status"
+ }
+}
