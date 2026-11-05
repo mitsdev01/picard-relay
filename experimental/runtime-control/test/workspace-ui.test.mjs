@@ -29,7 +29,10 @@ async function harness(t,{configTransform=value=>value,beforeBoot=async()=>{},in
  };
  const context=vm.createContext({document,window,TextEncoder,AbortController,Date,queueMicrotask,crypto:{randomUUID},Blob,URL:{createObjectURL:b=>{const id='blob:'+randomUUID();urls.set(id,b);return id;},revokeObjectURL:id=>urls.delete(id)},navigator:{clipboard:{writeText:async text=>{context.copied=text;}}},setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),fetch});
  await beforeBoot(f);
- vm.runInContext(script.replace('motion();void boot();','globalThis.workspaceTest={get draft(){return workDraft;},get result(){return workResult;},get ref(){return workRef;},get poll(){return workTimer;},loadWorkspace,readWorkspaceRequest,newWorkspaceRequest};motion();void boot();'),context);
+ vm.runInContext(script.replace('motion();void boot();','globalThis.workspaceTest={get draft(){return workDraft;},get result(){return workResult;},get ref(){return workRef;},get poll(){return workTimer;},loadWorkspace,readWorkspaceRequest,newWorkspaceRequest};motion();globalThis.workspaceBoot=boot().then(()=>workConfigFlight);'),context);
+ // Configuration reads durable files. Event-loop turns do not guarantee that
+ // I/O has finished, especially while the full Linux suite runs concurrently.
+ await context.workspaceBoot;
  for(let i=0;i<12;i++)await flush();
  return {f,context,els,created,downloads,urls,calls,pref,document,listeners,mediaListeners,windowListeners,get:id=>els.get(id),click:async id=>await els.get(id).listeners.click(),submit:async()=>await els.get('request-form').listeners.submit({preventDefault(){}}),async brief(){els.get('request-title').value='Browser fixture task';els.get('request-text').value='Propose a useful status helper.';await this.submit();},setFailReads:v=>failReads=v,setHoldRead:p=>holdRead=p,loseAuth(){signedIn=false;},deferResultResponse(){let captured,release;const ready=new Promise(r=>captured=r),gate=new Promise(r=>release=r);heldResultResponse={captured,gate};return {ready,release};}};
 }
