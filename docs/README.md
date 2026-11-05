@@ -8,7 +8,7 @@ Picard Relay accepts a narrowly approved AI request, records it durably, sends i
 
 **New to Picard?** [Quickstart](QUICKSTART.md) · [V1 workspace](V1.md) · [Console guide](CONSOLE-WORKSPACE.md)
 
-**Building or operating?** [Architecture](ARCHITECTURE.md) · [API](API.md) · [Operations](OPERATIONS.md) · [Development](DEVELOPMENT.md) · [Coding-agent workflow](../experimental/compute-broker/CODING-WORKFLOW.md)
+**Building or operating?** [Architecture](ARCHITECTURE.md) · [API](API.md) · [Operations](OPERATIONS.md) · [Development](DEVELOPMENT.md) · [Coding-agent workflow](../experimental/compute-broker/CODING-WORKFLOW.md) · [Cursor coding connector](CURSOR-CODING-CONNECTOR.md)
 
 **Updating your relay?** [System update button and host connection](OWNER-UPDATES.md)
 

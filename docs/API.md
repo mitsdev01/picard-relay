@@ -78,3 +78,15 @@ These routes exist only with explicit workspace activation, on the existing exac
 The server assigns a grant and fixes the provider, output ceiling and 15-minute request lifetime. A duplicate draft ID with the same input returns the original clocks and grant; different input conflicts. Approval, immutable work, enrollment association and source provenance are committed in one SQLite transaction. Owner-console approval records are distinct from signed-Board attestations. Replays never become new grants. A lost response is recovered through GET; clients must not silently prepare a replacement request.
 
 The HTTP body cap is 24,576 UTF-8 bytes; combined provider input is at most 12,000 bytes. There are at most eight active jobs, 16 live uncommitted drafts, 10 POST attempts per minute, 100 review events per result and 10,000 retained drafts/jobs. Counts are storage limits, not renewed call allowances.
+
+## Laptop coding client
+
+An enrolled host may optionally set `BRIDGE_MACHINE_CLIENTS_FILE` to an existing private file read with the same Linux ownership and mode checks as other admission files. The file contains token hashes, not raw tokens. Each row has an id, one `workspace-coding` scope and a revocation flag. There are at most eight rows.
+
+A matching `Authorization: Bearer` token may call only `GET /workspace/config`, draft creation and recovery, approval, exact submission, and `GET /workspace/requests/<ref>`. It cannot read history, write reviews, use owner setup or updates, or call the signed bridge. Sending the bearer token together with an owner session cookie is rejected. When the variable is unset, bearer authentication is disabled and owner-cookie behavior is unchanged.
+
+The runtime re-reads the file on each attempt, so revocation takes effect without another restart after the process has loaded the setting. This identity does not add a public route, a cancel route, or a second provider. The signed bridge still has its own HMAC `cancel` action; the laptop client does not receive that key. Setup for the local Cursor connector is in [the coding connector runbook](CURSOR-CODING-CONNECTOR.md).
+
+Machine drafts have a durable client-id association committed atomically with the draft in the existing metadata namespace. Only that client can recover, approve, submit or read the machine draft/result. Existing owner drafts and signed-board results are never adopted by a machine client, even when its token knows their IDs. Owner-cookie access remains unchanged. Machine result responses omit reviews; machine configuration responses omit owner history statistics, training and progress. Client ids must not be reassigned to unrelated clients when rotating credentials.
+
+The registry must be a regular, single-link file with exactly mode 0600, owned by root or the runtime uid and readable by that process. In the usual unprivileged service, use the runtime uid: a root-owned 0600 file is not readable by an ordinary runtime process. No raw token belongs on the host.
