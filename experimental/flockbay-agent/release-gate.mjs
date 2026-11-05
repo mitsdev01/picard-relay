@@ -13,8 +13,8 @@ export function codeIdentity(root){
   for(const name of readdirSync(dir).sort()){
    const path=join(dir,name),relative=prefix+name,st=lstatSync(path);
    if(st.isSymbolicLink())throw Error('code_link_refused');
-   if(st.isDirectory()){if(name==='test'||name==='private-recovery')continue;walk(path,relative+'/');}
-   else if(st.isFile()&&/\.(mjs|js|html|css|ps1)$/i.test(name))files.push({path:relative,sha256:sha(readFileSync(path))});
+   if(st.isDirectory()){if(name==='test'||name==='__pycache__')continue;walk(path,relative+'/');}
+   else if(st.isFile()&&!name.startsWith('test_')&&/\.(mjs|js|html|css|ps1|py|sh)$/i.test(name))files.push({path:relative,sha256:sha(readFileSync(path))});
   }
  }
  walk(root);if(!files.length)throw Error('empty_code_identity');return {sha256:sha(JSON.stringify(files)),files};
