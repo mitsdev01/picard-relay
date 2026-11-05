@@ -2,6 +2,6 @@
   "v": 1,
   "origin": "https://picard-relay.example.invalid",
   "token": "REPLACE_WITH_MACHINE_TOKEN",
-  "workspaceRoot": "D:\\src\\picard",
+  "workspaceRoot": "C:\\src\\example-checkout",
   "journalDir": "C:\\Users\\EXAMPLE\\.picard\\coding-journal"
 }

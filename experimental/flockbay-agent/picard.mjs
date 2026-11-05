@@ -1,8 +1,21 @@
-// Local CLI: shell-free process spawning, fixed SSH destination and remote command.
+// Local CLI: shell-free process spawning. SSH identity, known hosts, destination
+// and remote command come from the private environment, never from this file.
 import {spawn} from 'node:child_process';
 import {readFileSync,writeFileSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {validateMission} from './agent.mjs';
+function sshToken(name){
+ const value=process.env[name];
+ if(!value||value.startsWith('-')||/[\s\r\n\0,]/.test(value))throw Error('missing_or_invalid_'+name);
+ return value;
+}
+function sshArgs(){
+ const destination=sshToken('PICARD_FLOCKBAY_SSH_DESTINATION');
+ if(!/^[A-Za-z0-9._-]+@[A-Za-z0-9.:-]+$/.test(destination))throw Error('invalid_PICARD_FLOCKBAY_SSH_DESTINATION');
+ const remote=process.env.PICARD_FLOCKBAY_SSH_REMOTE;
+ if(!remote||/[\r\n\0]/.test(remote))throw Error('missing_or_invalid_PICARD_FLOCKBAY_SSH_REMOTE');
+ return ['-i',sshToken('PICARD_FLOCKBAY_SSH_IDENTITY'),'-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','UserKnownHostsFile='+sshToken('PICARD_FLOCKBAY_SSH_KNOWN_HOSTS'),'-o','ConnectTimeout=10',destination,remote];
+}
 const [action,...args]=process.argv.slice(2);
 try{
  if(action==='prepare'){
@@ -18,7 +31,7 @@ try{
   else if(['show','events','stop'].includes(action)&&args.length===1&&/^[a-f0-9-]{36}$/.test(args[0]))command={action,id:args[0]};
   else if(action==='start'&&args.length===2&&args[1]==='--approve'){const mission=JSON.parse(readFileSync(args[0],'utf8'));mission.approved=true;validateMission(mission);command={action,mission};}
   else throw Error('Usage: picard.mjs status | prepare --prompt-file FILE --out FILE [--mode inspect|build --max-calls 8 --minutes 10] | start FILE --approve | show ID | events ID | stop ID');
-  const ssh=spawn('ssh',['-i','C:/src2/Picard-v2/secrets/oracle-picard','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','UserKnownHostsFile=C:/src2/Picard-v2/secrets/oracle-known-hosts','-o','ConnectTimeout=10','opc@132.226.62.113','sudo -n -u picard-relay /usr/local/bin/node /opt/picard-flockbay-agent/v1/control.mjs'],{stdio:['pipe','inherit','inherit'],windowsHide:true,shell:false});
+  const ssh=spawn('ssh',sshArgs(),{stdio:['pipe','inherit','inherit'],windowsHide:true,shell:false});
   ssh.on('error',()=>{console.error('SSH unavailable; no automatic retry.');process.exitCode=1;});ssh.on('exit',code=>{process.exitCode=code??1;});ssh.stdin.on('error',()=>{});ssh.stdin.end(JSON.stringify(command));
  }
 }catch(e){console.error(JSON.stringify({error:e.message}));process.exitCode=1;}

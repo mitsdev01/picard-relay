@@ -1,5 +1,7 @@
 $ErrorActionPreference = 'Stop'
-$pidFile = 'C:\src2\Picard-v2\state\flockbay-agent\worker.pid'
+$root = $env:PICARD_FLOCKBAY_STATE_ROOT
+if ([string]::IsNullOrWhiteSpace($root)) { throw 'Set PICARD_FLOCKBAY_STATE_ROOT to a private state directory outside this repository.' }
+$pidFile = Join-Path (Join-Path $root 'flockbay-agent') 'worker.pid'
 if (!(Test-Path $pidFile)) { Write-Host 'No owned bridge PID.'; exit 0 }
 $workerId = [int](Get-Content $pidFile)
 $process = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $workerId) -ErrorAction SilentlyContinue

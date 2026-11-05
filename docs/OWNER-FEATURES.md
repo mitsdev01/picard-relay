@@ -91,7 +91,7 @@ counted owners instead of requests, suggested a new auth stack and made
 unsupported performance claims. A changes-requested review preserved those
 findings; those suggestions were not adopted.
 
-The [second saved proposal](https://picard-relay.141-148-50-78.sslip.io/#requests/8b1fe2e29a52f3a44529fd0a5a39614dbf0e446d22ee67ec3913f3f1f2917068)
+The second saved proposal
 generated the HUD panel-state helper now used by the browser. Review added a
 strict string guard and replaced suggested third-party test assumptions with
 built-in regression tests of the actual embedded function. Tests cover exact
@@ -100,7 +100,7 @@ clearing and truthful projected counts. Original proposals and reviews remain
 saved. Generated text was reviewed before integration, never auto-executed.
 Source checks remain separate from installation and owner acceptance.
 
-A [third saved proposal](https://picard-relay.141-148-50-78.sslip.io/#requests/6352a2dfda1a1c86557bec3f9c1ede78ec9fc48763374a18e752164935d4cd9d)
+A third saved proposal
 helped generate the static round-dot paths for the cockpit refinement. Review
 changed each point to an independent move command (the proposal connected them),
 rejected sparse arrays and corrected the suggested assertions. The corrected

@@ -3,7 +3,7 @@
 Owner: mitsdev01/picard-relay. Keep this PR draft until the remaining qualification is complete.
 This branch includes the reviewed coding connector and its isolation fixes (80be355),
 plus release preparation. It does not contain the unpublished Flockbay companion.
-Preserve C:\src2\Picard-v2 on codex/companion-upgrade-gates at 4fc894d.
+Preserve the companion checkout on codex/companion-upgrade-gates at 4fc894d. Do not record that machine path in this repository.
 
 ## Prepared
 

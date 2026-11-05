@@ -1,7 +1,7 @@
 # Trusted workspace tasks from Cursor
 
-The connector can live in `D:\src\picard` while a task targets an independently
-enrolled repository such as `D:\src\EasyJobCloud-v2`. No Oracle SSH key, owner
+The connector can live in one checkout while a task targets an independently
+enrolled repository. No Oracle SSH key, owner
 cookie or additional relay permission is needed. The cloud relay still returns
 inert proposals. The optional **local connector** performs scoped file edits
 and runs the owner's exact enrolled test commands on the laptop.
@@ -50,7 +50,7 @@ bounded test logs can contain private source or output; never upload them.
 Validate the file locally:
 
 ```powershell
-node D:\src\picard\tools\coding-connector\workspace-setup.mjs validate "$env:USERPROFILE\.picard\workspaces.json"
+node tools/coding-connector/workspace-setup.mjs validate "$env:PICARD_WORKSPACES_FILE"
 ```
 
 Add `PICARD_WORKSPACES_FILE` pointing to that absolute private file in the

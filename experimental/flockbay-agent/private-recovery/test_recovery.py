@@ -1,22 +1,23 @@
-import pathlib, tempfile, unittest
+import os, pathlib, tempfile, unittest
 import subprocess
 from unittest.mock import patch
 from reconcile import route_plan, missing_files
 import reconcile as recovery
 
 class RecoveryTests(unittest.TestCase):
-    core = 'picard-relay.132-226-62-113.sslip.io {\n    @read {\n    }\n}\n'
+    site = 'picard-relay.example.test'
+    core = site + ' {\n    @read {\n    }\n}\n'
     snippet = '    @developmentRead {\n        path /development/\n    }\n'
     def test_restore_and_idempotence(self):
-        restored = route_plan(self.core, self.snippet)
-        self.assertEqual(restored, route_plan(restored, self.snippet))
+        restored = route_plan(self.core, self.snippet, self.site)
+        self.assertEqual(restored, route_plan(restored, self.snippet, self.site))
         self.assertIn('    @read {', restored)
     def test_unknown_route_refused(self):
         with self.assertRaises(ValueError):
-            route_plan(self.core + '/development/other', self.snippet)
+            route_plan(self.core + '/development/other', self.snippet, self.site)
     def test_unknown_layout_refused(self):
         with self.assertRaises(ValueError):
-            route_plan(self.core.replace('@read', '@new'), self.snippet)
+            route_plan(self.core.replace('@read', '@new'), self.snippet, self.site)
     def test_missing_only_and_changed_refused(self):
         with tempfile.TemporaryDirectory() as folder:
             base = pathlib.Path(folder)
@@ -53,7 +54,7 @@ class RecoveryTests(unittest.TestCase):
             def fake_run(*args, **kwargs):
                 commands.append(args)
                 return subprocess.CompletedProcess(args, 1 if 'is-active' in args else 0, '', '')
-            with patch.multiple(recovery, BASE=base, LIVE=live, UNIT=unit, CADDY=caddy, PERSISTENT=[str(state)]), patch.object(recovery, 'run', fake_run):
+            with patch.dict(os.environ, {'PICARD_FLOCKBAY_CADDY_SITE': self.site}), patch.multiple(recovery, BASE=base, LIVE=live, UNIT=unit, CADDY=caddy, PERSISTENT=[str(state)]), patch.object(recovery, 'run', fake_run):
                 result = recovery.reconcile()
                 self.assertEqual(result['restoredFiles'], 1)
                 self.assertTrue(result['restoredRoutes'])
