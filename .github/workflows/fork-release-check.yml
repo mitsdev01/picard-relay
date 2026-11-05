@@ -1,0 +1,22 @@
+name: Check fork release preparation
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.22.1'
+      - run: node --test scripts/release-context.test.mjs scripts/prepare-fork-trust.test.mjs
+      - run: npm run test:coding-connector
+      - run: npm --prefix experimental/updater test
+      - run: npm --prefix experimental/runtime-control test
+      - run: npm --prefix experimental/runtime-control run test:socket
+      - run: npm run docs:check

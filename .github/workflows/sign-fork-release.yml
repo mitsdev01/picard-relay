@@ -1,0 +1,62 @@
+name: Sign fork release (manual, disabled until enrolled)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: picard-fork-sign-stable
+  cancel-in-progress: false
+jobs:
+  sign:
+    if: github.repository == 'mitsdev01/picard-relay' && github.ref == 'refs/heads/main' && vars.PICARD_FORK_RELEASE_ENABLED == 'true'
+    environment: picard-fork-release
+    env:
+      PICARD_FORK_RELEASE: '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.22.1'
+      - name: Test source without provider calls
+        run: |
+          node --test scripts/release-context.test.mjs scripts/prepare-fork-trust.test.mjs
+          npm test
+          npm run test:coding-connector
+          node --jitless --test tools/coding-connector/test/connector.test.mjs experimental/runtime-control/test/machine-client.test.mjs
+          npm run docs:check
+          npm --prefix experimental/updater test
+          npm --prefix experimental/runtime-control test
+          npm --prefix experimental/runtime-control run test:socket
+      - name: Install pinned Cosign from verified official assets
+        run: |
+          node --test scripts/install-ci-cosign.test.mjs
+          node --jitless --test scripts/install-ci-cosign.test.mjs
+          node scripts/install-ci-cosign.mjs
+      - name: Build and sign source manifest with ephemeral identity
+        run: |
+          node scripts/build-release.mjs
+          cosign sign-blob --yes --bundle release-output/manifest.sigstore.json release-output/manifest.json
+          cosign verify-blob --bundle release-output/manifest.sigstore.json --certificate-identity 'https://github.com/mitsdev01/picard-relay/.github/workflows/sign-fork-release.yml@refs/heads/main' --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' release-output/manifest.json
+          node scripts/package-signed-release.mjs
+      - name: Publish source envelope only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node --input-type=module <<'JS'
+          import {readFile,writeFile} from 'node:fs/promises';
+          import {execFileSync} from 'node:child_process';
+          const endpoint='repos/mitsdev01/picard-relay/contents/releases/stable.json';
+          let sha;
+          try { sha=JSON.parse(execFileSync('gh',['api',endpoint],{encoding:'utf8'})).sha; }
+          catch(error) { if(!String(error.stderr).includes('404')) throw error; }
+          const body={message:'Publish signed Picard source release',branch:'main',content:(await readFile('release-output/stable.json')).toString('base64'),...(sha?{sha}:{})};
+          await writeFile('release-output/publish.json',JSON.stringify(body));
+          execFileSync('gh',['api','--method','PUT',endpoint,'--input','release-output/publish.json'],{stdio:'inherit'});
+          JS
