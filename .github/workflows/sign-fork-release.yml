@@ -26,7 +26,7 @@ jobs:
           node-version: '24.22.1'
       - name: Test source without provider calls
         run: |
-          node --test scripts/release-context.test.mjs scripts/prepare-fork-trust.test.mjs
+          node --test scripts/release-context.test.mjs scripts/prepare-fork-trust.test.mjs scripts/publish-fork.test.mjs
           npm test
           npm run test:coding-connector
           node --jitless --test tools/coding-connector/test/connector.test.mjs experimental/runtime-control/test/machine-client.test.mjs
@@ -49,14 +49,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          node --input-type=module <<'JS'
-          import {readFile,writeFile} from 'node:fs/promises';
-          import {execFileSync} from 'node:child_process';
-          const endpoint='repos/mitsdev01/picard-relay/contents/releases/stable.json';
-          let sha;
-          try { sha=JSON.parse(execFileSync('gh',['api',endpoint],{encoding:'utf8'})).sha; }
-          catch(error) { if(!String(error.stderr).includes('404')) throw error; }
-          const body={message:'Publish signed Picard source release',branch:'main',content:(await readFile('release-output/stable.json')).toString('base64'),...(sha?{sha}:{})};
-          await writeFile('release-output/publish.json',JSON.stringify(body));
-          execFileSync('gh',['api','--method','PUT',endpoint,'--input','release-output/publish.json'],{stdio:'inherit'});
-          JS
+          node scripts/publish-fork.mjs

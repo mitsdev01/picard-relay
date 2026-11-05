@@ -13,11 +13,11 @@ Preserve C:\src2\Picard-v2 on codex/companion-upgrade-gates at 4fc894d.
   deployment restrictions before enabling. A named environment alone is not an approval gate.
 - Exact signing identity:
   https://github.com/mitsdev01/picard-relay/.github/workflows/sign-fork-release.yml@refs/heads/main
-- Source publication: https://raw.githubusercontent.com/mitsdev01/picard-relay/main/releases/stable.json
+- Source publication: https://raw.githubusercontent.com/mitsdev01/picard-relay/release-feed/releases/stable.json
 - Existing Brian workflow, updater trust files and host configuration are unchanged.
 - New fork manifests use version 2.0.RUN and sequence 1000000000 + RUN*1000 + ATTEMPT.
   This is a proposed sequence domain, not proof it exceeds this host's current counter.
-- prepareForkTrust in scripts/prepare-fork-trust.mjs stages five exact string transforms
+- prepareForkTrust in scripts/prepare-fork-trust.mjs stages six exact file transforms
   in memory. It does not install anything or establish that its inputs are trusted.
 
 ## Required before publication and host enrollment
@@ -47,10 +47,11 @@ highestSequence, ledger counts, configuration hashes and invocation-marker hashe
 Inspect existing STOP/HOLD/pending evidence; do not delete it to make migration proceed.
 
 Pause scheduled updates under an approved maintenance procedure, preserving their prior
-enabled/running state. Stage these five files outside installed paths using prepareForkTrust:
+enabled/running state. Stage these six files outside installed paths using prepareForkTrust:
 
 | Input name | Intended installed target |
 | --- | --- |
+| pull.mjs | /usr/local/lib/picard-updater/pull.mjs |
 | fetch-release.mjs | /usr/local/lib/picard-updater/fetch-release.mjs |
 | run-once.mjs | /usr/local/lib/picard-updater/run-once.mjs |
 | sigstore-verifier.mjs | /usr/local/lib/picard-updater/sigstore-verifier.mjs |
@@ -90,3 +91,26 @@ and qualify both core and companion. Publish manually only after review. Do not 
 fork release publications with upstream stable.json or automatically authorize compatibility.
 Source merged, envelope signed/published, host installed, live verified and owner acceptance
 are separate milestones. This PR deliberately stops before those milestones.
+
+Publication writes only to release-feed, leaving main protected by required PR checks.
+The fetch validator gains only an exact exception for this fork's release-feed URL.
+The Sigstore signing identity remains pinned to the main workflow and exact commit.
+
+## Preparation checkpoint: 2026-11-05
+
+Repository settings were configured and read back: main requires PRs, strict aggregate
+`check` (GitHub Actions), conversation resolution, and enforcement for administrators.
+Force pushes/deletion are disabled. The aggregate check includes broker normal/jitless
+tests, avoiding a required path-filtered job that may never run on unrelated changes.
+The release environment requires approval from mitsdev01, forbids administrator bypass,
+and permits only main. Self-review is allowed so the sole owner can approve a manually
+dispatched release; this is explicit owner approval, not independent two-person review.
+PICARD_FORK_RELEASE_ENABLED is set to false. No release dispatch or host migration occurred.
+
+Core 21210ce plus preserved companion 4fc894d passed isolated Linux fixture checks:
+66 companion tests normally and 66 jitless, 9 Python recovery tests, 17 console/auth tests.
+The companion's tracked source was copied for these checks, not merged or published.
+The six-file migration transform also accepted the actual preserved guarded-update source;
+staged guard/downloader parse checks passed. These are source/argument checks, not real
+Sigstore acceptance or a signed-envelope compatibility enrollment. Requalify the exact
+signed release and migrated companion hash before authorizing any host update.

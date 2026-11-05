@@ -14,7 +14,9 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24.22.1'
-      - run: node --test scripts/release-context.test.mjs scripts/prepare-fork-trust.test.mjs
+      - run: node --test scripts/release-context.test.mjs scripts/prepare-fork-trust.test.mjs scripts/publish-fork.test.mjs
+      - run: npm --prefix experimental/compute-broker test
+      - run: npm --prefix experimental/compute-broker run test:jitless
       - run: npm run test:coding-connector
       - run: npm --prefix experimental/updater test
       - run: npm --prefix experimental/runtime-control test
