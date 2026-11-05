@@ -93,7 +93,7 @@ export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTes
   }return true;
  }
  return {
-  list(){const r=registry();return {workspaces:r.workspaces.map(w=>({id:w.id,root:w.root,allowApply:w.allowApply,tests:w.testCommands.map(c=>c.id)})),executionBoundary:'Enrolled local commands run with your account privileges, not in a sandbox.'};},
+  list(){const r=registry();return {workspaces:r.workspaces.map(w=>{const lock=path.join(store(r,w),'active');return {id:w.id,root:w.root,allowApply:w.allowApply,tests:w.testCommands.map(c=>c.id),activeTaskId:fs.existsSync(lock)?fs.readFileSync(lock,'utf8'):null};}),executionBoundary:'Enrolled local commands run with your account privileges, not in a sandbox.'};},
   discover({workspaceId,query}) {
    const {w}=settings(workspaceId);requireThat(typeof query==='string'&&query.length>=2&&query.length<=120,'query_invalid');
    const found=[];let examined=0,limited=false;

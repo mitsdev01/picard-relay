@@ -20,7 +20,7 @@ export function relativeFile(rel) {
  const parts=rel.split('/');
  requireThat(parts.every(p=>p&&p!=='.'&&p!=='..'&&!/[. ]$/.test(p)&&!forbidden.has(p.toLowerCase())&&!/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(p)),'path_refused');
  const name=parts.at(-1);
- requireThat(!/^\.env(?:\.|$)/i.test(name)&&!/^id_(rsa|dsa|ecdsa|ed25519)/i.test(name)&&!/(?:^|[-_.])(credentials|secrets|cookies|auth-state)(?:[-_.]|$)/i.test(name)&&! /\.(pem|key|p12|pfx|ppk|kdbx)$/i.test(name),'path_refused');
+ requireThat(!/^\.env(?:\.|$)/i.test(name)&&!['.npmrc','.pypirc','.netrc','known_hosts'].includes(name.toLowerCase())&&!/^id_(rsa|dsa|ecdsa|ed25519)/i.test(name)&&!/(?:^|[-_.])(credentials|secrets|cookies|auth-state)(?:[-_.]|$)/i.test(name)&&! /\.(pem|key|p12|pfx|ppk|kdbx)$/i.test(name),'path_refused');
  return rel;
 }
 export function locate(root,rel) {
