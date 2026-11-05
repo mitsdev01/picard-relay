@@ -19,10 +19,10 @@ def main():
     shutil.copyfile(target,backup/'Caddyfile')
     recovery=pathlib.Path('/var/lib/picard-flockbay-recovery/routes.txt');shutil.copyfile(recovery,backup/'routes.txt')
     candidate=target.with_name('Caddyfile.qualified');candidate.write_text(after)
-    subprocess.run(['/usr/local/bin/caddy','validate','--config',str(candidate),'--adapter','caddyfile'],check=True,capture_output=True)
+    subprocess.run(['/usr/local/bin/caddy','validate','--config',str(candidate),'--adapter','caddyfile'],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
     candidate.replace(target)
     try:
-        subprocess.run(['systemctl','restart','caddy.service'],check=True,capture_output=True)
+        subprocess.run(['systemctl','restart','caddy.service'],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         subprocess.run(['systemctl','is-active','--quiet','caddy.service'],check=True)
     except:
         target.write_text(before);subprocess.run(['systemctl','restart','caddy.service'],check=True);raise

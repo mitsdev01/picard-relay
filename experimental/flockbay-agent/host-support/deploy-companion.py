@@ -6,7 +6,7 @@ state = pathlib.Path('/var/lib/picard-flockbay-agent')
 stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
 backup = pathlib.Path('/var/backups/picard-companion') / stamp
 def run(*args):
-    return subprocess.run(args, check=True, capture_output=True, text=True, timeout=45).stdout
+    return subprocess.run(args, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=45).stdout
 def snapshot():
     with sqlite3.connect('file:' + str(state / 'agent.sqlite') + '?mode=ro', uri=True) as db:
         if db.execute("SELECT COUNT(*) FROM missions WHERE state IN ('running','awaiting_validation')").fetchone()[0] or db.execute("SELECT COUNT(*) FROM commands WHERE state IN ('queued','sent','uncertain')").fetchone()[0]:
@@ -38,7 +38,7 @@ try:
     run('systemctl','start','picard-flockbay-agent.service')
     run('systemctl','is-active','--quiet','picard-flockbay-agent.service')
     for attempt in range(20):
-        probe=subprocess.run(['runuser','-u','picard-relay','--','/usr/local/bin/node',str(live/'control.mjs')],input='{"action":"status"}',capture_output=True,text=True,timeout=10)
+        probe=subprocess.run(['runuser','-u','picard-relay','--','/usr/local/bin/node',str(live/'control.mjs')],input='{"action":"status"}',stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True,timeout=10)
         if probe.returncode==0: break
         time.sleep(0.25)
     else: raise RuntimeError('companion_readiness_failed')

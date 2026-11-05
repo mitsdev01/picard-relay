@@ -8,7 +8,7 @@ source=pathlib.Path(sys.argv[1]).resolve()
 support=pathlib.Path('/usr/local/lib/picard-updater')
 policy_dir=pathlib.Path('/etc/picard-updater')
 core=pathlib.Path('/opt/picard-relay')
-def run(*args): return subprocess.run(args,check=True,capture_output=True,text=True,timeout=60).stdout
+def run(*args): return subprocess.run(args,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,universal_newlines=True,timeout=60).stdout
 if os.getuid()!=0 or support.exists(): raise RuntimeError('root_and_fresh_enrollment_required')
 report=json.loads(pathlib.Path(sys.argv[2]).read_text())
 if report['platform']!='linux' or any(not c['passed'] or c['exitCode']!=0 for c in report['checks']): raise RuntimeError('qualification_failed')
