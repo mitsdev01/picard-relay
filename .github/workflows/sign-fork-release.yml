@@ -34,6 +34,9 @@ jobs:
           npm --prefix experimental/updater test
           npm --prefix experimental/runtime-control test
           npm --prefix experimental/runtime-control run test:socket
+          npm --prefix experimental/flockbay-agent test
+          npm --prefix experimental/flockbay-agent run test:jitless
+          python3 -m unittest discover -s experimental/flockbay-agent/private-recovery -p 'test_*.py'
       - name: Install pinned Cosign from verified official assets
         run: |
           node --test scripts/install-ci-cosign.test.mjs

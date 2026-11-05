@@ -22,3 +22,8 @@ jobs:
       - run: npm --prefix experimental/runtime-control test
       - run: npm --prefix experimental/runtime-control run test:socket
       - run: npm run docs:check
+      - name: Preserve companion compatibility on every fork PR
+        run: |
+          npm --prefix experimental/flockbay-agent test
+          npm --prefix experimental/flockbay-agent run test:jitless
+          python3 -m unittest discover -s experimental/flockbay-agent/private-recovery -p 'test_*.py'

@@ -1,0 +1,38 @@
+name: Check Picard companion source (never deploy)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'experimental/flockbay-agent/**'
+      - 'experimental/runtime-control/**'
+      - 'experimental/updater/**'
+      - 'releases/stable.json'
+      - '.github/workflows/companion-compatibility.yml'
+  push:
+    paths:
+      - 'experimental/flockbay-agent/**'
+      - 'experimental/runtime-control/**'
+      - 'experimental/updater/**'
+      - 'releases/stable.json'
+      - '.github/workflows/companion-compatibility.yml'
+permissions:
+  contents: read
+jobs:
+  qualification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.22.1'
+      # Source checks do not enroll compatibility or trust an imported stable.json.
+      # qualify.mjs remains a separate operator check of the actual signed artifact.
+      - name: Check companion source without provider calls
+        run: |
+          npm --prefix experimental/flockbay-agent test
+          npm --prefix experimental/flockbay-agent run test:jitless
+          python3 -m unittest discover -s experimental/flockbay-agent/private-recovery -p 'test_*.py'
+          node --test experimental/runtime-control/test/console.test.mjs experimental/runtime-control/test/owner-updates.test.mjs

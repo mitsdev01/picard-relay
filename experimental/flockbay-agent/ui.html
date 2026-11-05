@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Picard • Game development</title><link rel="stylesheet" href="/development/style.css"><script defer src="/development/app.js"></script>
+<main><a href="/">← Picard console</a><h1>Game development</h1>
+<p>Inspect the game or propose a scoped patch for review.</p>
+<p id="status" role="status">Connecting…</p><p id="project"></p>
+<p class="notice">Automatic game testing and application are unavailable until a separate Flockbay test connection is configured. Proposed patches do not change your game.</p>
+<form id="form"><label>What should Picard inspect?<textarea id="prompt" required maxlength="12000" rows="4"></textarea></label>
+<div class="row"><label>Maximum Groq calls<input id="calls" type="number" min="1" max="24" value="3" required></label><label>Minutes<input id="minutes" type="number" min="1" max="30" value="10" required></label></div>
+<button id="review" type="submit">Review inspection</button></form>
+<section><h2>Propose a patch</h2><p>Load a prepared mission JSON with exact source snapshots, writable files, required checks and repair limits. Review its scope before sending it to Groq.</p><label>Prepared patch mission<input id="missionFile" type="file" accept=".json,application/json"></label></section>
+<section id="approval" hidden><h2>Review exact mission</h2><pre id="summary"></pre><details><summary>Source snapshots sent to Groq</summary><pre id="sourceReview"></pre></details><p>Existing enrollment and this mission’s call limit apply. Repair requests use the same allowance and deadline.</p><button id="start">Approve and start</button><button id="back">Cancel preparation</button></section>
+<p id="error" role="alert"></p><h2>Missions</h2><div id="missions"></div>
+<section><h2>Selected mission</h2><button id="stop" hidden>Stop mission</button><pre id="detail">Choose a mission to review.</pre><div id="changes"></div><div id="history"></div>
+<section id="reviewActions" hidden><h3>Review this candidate</h3><p id="repairBudget"></p><label>What needs to change?<textarea id="reason" maxlength="2000" rows="3"></textarea></label><button id="repair">Request repair within remaining budget</button><button id="reject">Reject candidate</button></section>
+<details><summary>Mission events and model usage</summary><pre id="events"></pre></details></section></main></html>
