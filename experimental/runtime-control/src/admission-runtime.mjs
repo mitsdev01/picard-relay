@@ -7,7 +7,7 @@ import {createAdmissionStore,admissionHash,legacyMarkerName,stop} from './admiss
 import {readBoundAdmissionPolicy} from './admission-policy.mjs';
 import {validCostEnrollmentMetadata} from './admission-enrollment.mjs';
 import {createAdmissionAssistantAdapter} from './admission-dispatch.mjs';
-import {createAdmissionHandler,createWorkspaceHandler} from './admission-handler.mjs';
+import {createAdmissionHandler,createWorkspaceHandler,parseMachineClientRegistry,matchMachineClient} from './admission-handler.mjs';
 import {admissionConsoleHtml} from './admission-ui.mjs';
 import {groqHttpsFetch} from './https-fetch.mjs';
 import {TextDecoder} from 'node:util';
@@ -51,6 +51,15 @@ export function readLegacyAdmissionMarkers(directory,expectedNames){
   return result;
  }catch{stop('legacy_review_required');}finally{if(fd!==undefined)fs.closeSync(fd);}
 }
+// Optional, revocable laptop clients. Absent file means bearer auth is off.
+// Every check re-reads the private file so revocation does not wait for a restart.
+export function createMachineAuthenticator(file){
+ if(file==null||file==='')return null;
+ if(typeof file!=='string')stop('admission_configuration_invalid');
+ const load=()=>parseMachineClientRegistry(readExistingAdmissionFile(file,8192).text);
+ load();
+ return async token=>{try{return matchMachineClient(load(),token);}catch{return null;}};
+}
 export function prepareAdmissionRuntime({activationEnabled=false,config,env=process.env,now=Date.now,fetchImpl=groqHttpsFetch}={}){
  if(activationEnabled!==true)return null;
  if(process.platform!=='linux'||config?.admissionEnabled!==true||config.consoleEnabled!==true||!config.consoleOrigins?.length||env.BRIDGE_PROVIDER!=='groq'||env.GROQ_ENABLED!=='true'||env.GROQ_ONE_SHOT!=='true'||config.assistantId!=='groq:openai/gpt-oss-20b')stop('admission_configuration_invalid');
@@ -73,7 +82,7 @@ export function prepareAdmissionRuntime({activationEnabled=false,config,env=proc
   try{
   adapter.attachStore(admissionStore,{accepting:()=>control.accepting});
   const handler=createAdmissionHandler({activationEnabled:true,store:admissionStore,auth,loadPolicy,binding,origins:config.consoleOrigins,now,currentAvailability:adapter.availability});
-  const workspace=createWorkspaceHandler({enabled:config.workspaceEnabled===true,store:admissionStore,auth,loadPolicy,binding,origins:config.consoleOrigins,now,currentAvailability:adapter.availability});
+  const workspace=createWorkspaceHandler({enabled:config.workspaceEnabled===true,store:admissionStore,auth,loadPolicy,binding,origins:config.consoleOrigins,now,currentAvailability:adapter.availability,authenticateMachine:createMachineAuthenticator(config.machineClientsFile)});
   return {handler:async(req,res)=>await workspace(req,res)||await handler(req,res),html:admissionConsoleHtml(baseHtml,{activationEnabled:true,workspaceEnabled:config.workspaceEnabled===true}),dispatchStore:{...store,claimNext:input=>adapter.claimNext(input)},close:()=>admissionStore.close()};
   }catch{admissionStore.close();stop('admission_configuration_invalid');}
  }};

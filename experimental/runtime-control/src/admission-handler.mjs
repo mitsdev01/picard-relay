@@ -1,7 +1,7 @@
 // Explicitly disabled by default. Runtime wiring supplies existing owner auth.
 import {canonical,digest,validateWork} from './protocol.mjs';
 import {planFiniteAdmission,planWorkspaceDraft,validateWorkspaceDraft} from './admission-plan.mjs';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,timingSafeEqual} from 'node:crypto';
 import {readBoundAdmissionPolicy} from './admission-policy.mjs';
 import {AdmissionError,admissionHash,stop} from './admission-store.mjs';
 import {recentJobReason} from './relay-store.mjs';
@@ -11,9 +11,34 @@ const headers={'Cache-Control':'no-store, private','Pragma':'no-cache','Content-
 const routes=new Map([['/request-catalogue','GET'],['/request-approvals','POST'],['/requests','POST']]);
 const failureStatuses={auth_failed:401,request_invalid:400,request_too_large:413,admission_rate_limited:429,approval_invalid:409,approval_expired:409,approval_record_invalid:409,existing_record_invalid:409,scope_revoked:409,admission_blocked:503};
 
+const machineToken=/^[A-Za-z0-9_-]{43}$/;
+// Hash-only laptop registry. A raw token never belongs in this file, and a
+// revoked row cannot fall back to the owner cookie or another client.
+export function parseMachineClientRegistry(text){
+ if(typeof text!=='string'||Buffer.byteLength(text)>8192)stop('machine_clients_invalid');
+ let doc;try{doc=JSON.parse(text);}catch{stop('machine_clients_invalid');}
+ if(!exact(doc,['v','clients'])||doc.v!==1||!Array.isArray(doc.clients)||doc.clients.length<1||doc.clients.length>8)stop('machine_clients_invalid');
+ const ids=new Set(),hashes=new Set(),clients=[];
+ for(const row of doc.clients){
+  if(!exact(row,['id','tokenSha256','scopes','revoked'])||!/^[a-z0-9-]{1,50}$/.test(row.id)||!/^[a-f0-9]{64}$/.test(row.tokenSha256)||row.revoked!==true&&row.revoked!==false||!Array.isArray(row.scopes)||row.scopes.length!==1||row.scopes[0]!=='workspace-coding'||ids.has(row.id)||hashes.has(row.tokenSha256))stop('machine_clients_invalid');
+  ids.add(row.id);hashes.add(row.tokenSha256);clients.push({id:row.id,tokenSha256:row.tokenSha256,revoked:row.revoked});
+ }
+ return {v:1,clients};
+}
+export function matchMachineClient(registry,token){
+ if(!registry||registry.v!==1||!Array.isArray(registry.clients)||!machineToken.test(token??''))return null;
+ const actual=Buffer.from(admissionHash(token),'utf8');let matched=null;
+ for(const client of registry.clients){
+  const expected=Buffer.from(client.tokenSha256,'utf8');
+  if(expected.length===actual.length&&timingSafeEqual(actual,expected)&&client.revoked!==true)matched={id:client.id,scope:'workspace-coding'};
+ }
+ return matched;
+}
+
 // Opt-in owner workspace. The signed Board endpoint keeps its own authority;
-// a browser draft is never a signed Board attestation.
-export function createWorkspaceHandler({enabled=false,auth,store,binding,origins=[],now=Date.now,loadPolicy,currentAvailability=()=>null,afterCommit=()=>{}}={}){
+// a browser draft is never a signed Board attestation. An optional machine
+// client may prepare and submit the same workspace requests, and nothing else.
+export function createWorkspaceHandler({enabled=false,auth,store,binding,origins=[],now=Date.now,loadPolicy,currentAvailability=()=>null,afterCommit=()=>{},authenticateMachine=null}={}){
  if(enabled!==true)return async()=>false;
  if(!auth||!store||typeof loadPolicy!=='function')stop('admission_configuration_invalid');
  const allowed=new Set(origins),scope=admissionHash(canonical([binding.ownerId,'owner-workspace']));
@@ -57,9 +82,21 @@ export function createWorkspaceHandler({enabled=false,auth,store,binding,origins
   let origin;try{const host=req.headers.host,u=new URL('https://'+host);if(typeof host==='string'&&u.host===host&&!u.username&&!u.password&&u.pathname==='/'&&!u.search&&!u.hash)origin=u.origin;}catch{}
   if(!allowed.has(origin)||req.headers.origin!==undefined&&req.headers.origin!==origin||!['same-origin','none',undefined].includes(req.headers['sec-fetch-site'])||req.method==='POST'&&req.headers.origin!==origin)return reply(403,{error:'auth_failed'});
   try{
-   const cookies=typeof req.headers.cookie==='string'&&req.headers.cookie.length<=4096?req.headers.cookie.split(';').map(x=>x.trim()).filter(x=>x.startsWith('__Host-PicardSession=')):[];
-   const token=cookies.length===1?cookies[0].slice('__Host-PicardSession='.length):'';
-   if(!/^[A-Za-z0-9_-]{43}$/.test(token)||!await auth.authenticate(token))return reply(401,{error:'auth_failed'});
+   let token='',machine=false;
+   const authorization=req.headers.authorization;
+   if(authorization!==undefined){
+    const match=typeof authorization==='string'?/^Bearer ([A-Za-z0-9_-]{43})$/.exec(authorization):null;
+    let client=null;
+    if(match&&typeof authenticateMachine==='function'){try{client=await authenticateMachine(match[1]);}catch{client=null;}}
+    if(!client||client.scope!=='workspace-coding')return reply(401,{error:'auth_failed'});
+    if(typeof req.headers.cookie==='string'&&req.headers.cookie.includes('__Host-PicardSession='))return reply(401,{error:'auth_failed'});
+    token=match[1];machine=true;
+   }else{
+    const cookies=typeof req.headers.cookie==='string'&&req.headers.cookie.length<=4096?req.headers.cookie.split(';').map(x=>x.trim()).filter(x=>x.startsWith('__Host-PicardSession=')):[];
+    token=cookies.length===1?cookies[0].slice('__Host-PicardSession='.length):'';
+    if(!machineToken.test(token)||!await auth.authenticate(token))return reply(401,{error:'auth_failed'});
+   }
+   if(machine&&!(req.method==='GET'&&(url==='/workspace/config'||readDraft||readResult)||req.method==='POST'&&['/workspace/drafts','/workspace/approvals','/workspace/requests'].includes(url)))return reply(403,{error:'auth_failed'});
    if(req.method==='GET'){
     if(historyPath){
      const query=new URL(url,'https://fixture.invalid').searchParams;
