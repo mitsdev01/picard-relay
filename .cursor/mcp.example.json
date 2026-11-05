@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "picard-coding": {
+      "type": "stdio",
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "C:\\src\\example-checkout\\tools\\coding-connector\\server.mjs"
+      ],
+      "env": {
+        "PICARD_CODING_CONFIG": "C:\\Users\\EXAMPLE\\.picard\\coding-client.json",
+        "PICARD_WORKSPACES_FILE": "C:\\Users\\EXAMPLE\\.picard\\workspaces.json"
+      }
+    }
+  }
+}

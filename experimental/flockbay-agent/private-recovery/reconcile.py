@@ -10,16 +10,23 @@ PERSISTENT = ['/etc/picard-flockbay-agent/config.json', '/etc/picard-flockbay-ag
               '/var/lib/picard-flockbay-agent/agent.sqlite', '/etc/picard-relay/credentials/groq',
               '/etc/picard-relay/credentials/free-gate.json']
 
-def route_plan(current, snippet):
+def configured_site():
+    site = os.environ.get('PICARD_FLOCKBAY_CADDY_SITE', '').strip()
+    if not site or site.startswith('-') or any(ch in site for ch in '\r\n\0{}'):
+        raise ValueError('caddy_site_not_configured')
+    return site
+
+def route_plan(current, snippet, site):
     if current.count(snippet) == 1:
         return current
     if '/development/' in current or '@development' in current:
         raise ValueError('development_routes_changed_review_required')
     anchor = '    @read {'
-    if current.count(anchor) != 1 or current.count('picard-relay.132-226-62-113.sslip.io {') != 1:
+    marker = site + ' {'
+    if current.count(anchor) != 1 or current.count(marker) != 1:
         raise ValueError('caddy_layout_changed_review_required')
     # Do not guess which site owns the anchor in a multi-site configuration.
-    between = current.split('picard-relay.132-226-62-113.sslip.io {', 1)[1].split(anchor, 1)[0]
+    between = current.split(marker, 1)[1].split(anchor, 1)[0]
     if '\n}' in between:
         raise ValueError('caddy_site_changed_review_required')
     return current.replace(anchor, snippet + anchor, 1)
@@ -61,7 +68,7 @@ def reconcile():
         raise ValueError('service_unit_changed_review_required')
     unit_missing = not UNIT.exists()
     current = CADDY.read_text()
-    planned = route_plan(current, (BASE / 'routes.txt').read_text())
+    planned = route_plan(current, (BASE / 'routes.txt').read_text(), configured_site())
     active = run('systemctl', 'is-active', '--quiet', 'picard-flockbay-agent', check=False).returncode == 0
     # If healthy, only inspect. A busy mission defers all repairs.
     if active:

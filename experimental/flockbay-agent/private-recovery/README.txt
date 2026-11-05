@@ -38,8 +38,12 @@ Service: /etc/systemd/system/picard-flockbay-reconcile.service
 Live integration: /opt/picard-flockbay-agent/v1
 
 No-browser operations (existing SSH account/key)
+Set PICARD_FLOCKBAY_SSH_IDENTITY, PICARD_FLOCKBAY_SSH_KNOWN_HOSTS,
+PICARD_FLOCKBAY_SSH_DESTINATION, and PICARD_FLOCKBAY_CADDY_SITE in the private
+environment. Do not commit them. The Caddy site value is the site label recovery
+must match, with no braces.
 Use this SSH prefix in PowerShell:
-ssh -i C:/src2/Picard-v2/secrets/oracle-picard -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=C:/src2/Picard-v2/secrets/oracle-known-hosts opc@132.226.62.113
+ssh -i $env:PICARD_FLOCKBAY_SSH_IDENTITY -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$env:PICARD_FLOCKBAY_SSH_KNOWN_HOSTS $env:PICARD_FLOCKBAY_SSH_DESTINATION
 
 Append one quoted remote command:
   'sudo -n cat /var/lib/picard-flockbay-recovery/status.json'
@@ -47,7 +51,7 @@ Append one quoted remote command:
   'sudo -n journalctl -u picard-flockbay-reconcile.service -n 20 --no-pager'
 
 Then verify the existing Windows bridge and private command channel:
-node C:/src2/Picard-v2/experimental/flockbay-agent/picard.mjs status
+node experimental/flockbay-agent/picard.mjs status
 
 When we intentionally upgrade our integration, test it first, then explicitly
 refresh the protected snapshot to that known-good version. Never automatically

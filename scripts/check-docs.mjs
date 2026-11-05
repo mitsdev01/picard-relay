@@ -1,4 +1,5 @@
 import {readFile,stat} from 'node:fs/promises';
+import {privatePathFindings} from './check-public-paths.mjs';
 import {resolve,dirname,relative} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -32,4 +33,5 @@ const ids=new Set();for(const item of work.items){
  for(const path of [...(item.sourceFiles??[]),...(item.tests??[])])await exists(path,item.id);
 }
 const register=await read('docs/WORK-REGISTER.md');for(const id of ids)if(!register.includes(id))errors.push('Work summary is missing '+id);
+errors.push(...await privatePathFindings(root));
 if(errors.length){console.error(errors.join('\n'));process.exitCode=1;}else console.log(`Documentation checks passed: ${new Set(documents).size} entry/guides, ${ids.size} work records, ${policy.allowedFiles.length} runtime modules. No network or provider calls.`);

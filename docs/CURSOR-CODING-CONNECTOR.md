@@ -26,11 +26,11 @@ Preparation errors after identity allocation also return `requestId`; retry prep
 
 ## Start
 
-Cursor starts the server from `.cursor/mcp.json`:
+Cursor starts the server from an untracked `.cursor/mcp.json`. Copy `.cursor/mcp.example.json` and fill in this machine's paths. Do not commit that file. Use this machine's absolute Node 24 `node.exe`, not `npm.cmd`:
 
-- Command: `C:\Program Files\nodejs\node.exe`
-- Arguments: `D:\src\picard\tools\coding-connector\server.mjs`
-- Config file: `C:\Users\Billu\.picard\coding-client.json`
+- Command: absolute path to Node 24 `node.exe`
+- Arguments: `tools/coding-connector/server.mjs` in this checkout
+- Config file: `%USERPROFILE%\.picard\coding-client.json`
 
 Reload the Cursor window after changing that file. The server writes `picard-coding-connector 1.1.0 ready` to stderr. Stdout is only MCP JSON.
 
@@ -39,8 +39,8 @@ The private config contains the origin, the raw token, `workspaceRoot`, and `jou
 Check the server without Cursor:
 
 ```powershell
-$env:PICARD_CODING_CONFIG = 'C:\Users\Billu\.picard\coding-client.json'
-node D:\src\picard\tools\coding-connector\server.mjs
+$env:PICARD_CODING_CONFIG = Join-Path $env:USERPROFILE '.picard\coding-client.json'
+node tools/coding-connector/server.mjs
 ```
 
 ## Credentials
@@ -50,8 +50,13 @@ The laptop identity is `work-laptop-coding`. Its raw token stays in the private 
 Generate or rotate only when the private files are absent. The generator refuses to overwrite and does not print the token:
 
 ```powershell
-node D:\src\picard\tools\coding-connector\issue-machine-token.mjs --client C:\Users\Billu\.picard\coding-client.json --registry C:\Users\Billu\.picard\machine-clients.json --origin https://picard-relay.132-226-62-113.sslip.io --workspace D:\src\picard --journal C:\Users\Billu\.picard\coding-journal
+$client = Join-Path $env:USERPROFILE '.picard\coding-client.json'
+$registry = Join-Path $env:USERPROFILE '.picard\machine-clients.json'
+$journal = Join-Path $env:USERPROFILE '.picard\coding-journal'
+node tools/coding-connector/issue-machine-token.mjs --client $client --registry $registry --origin $env:PICARD_RELAY_ORIGIN --workspace (Get-Location).Path --journal $journal
 ```
+
+`$env:PICARD_RELAY_ORIGIN` is the relay origin already stored in the private config. Do not commit that origin.
 
 Revocation: on the enrolled host, set `revoked` to `true` or remove that row in the installed registry, then save the file. The running process re-reads it. Removing the laptop config file stops this computer from presenting the token. Deleting the local journal does not revoke the server credential and must not be used to force another submission.
 
@@ -77,7 +82,7 @@ The host file reader is Linux-only and fails closed on this Windows laptop. That
 
 ## Context that may be sent
 
-Prepare reads only the paths named in that call, and only when they resolve inside `workspaceRoot`. The default root is `D:\src\picard`. The journal and the credential file are excluded.
+Prepare reads only the paths named in that call, and only when they resolve inside `workspaceRoot`. That root is the `workspaceRoot` in the private config. The journal and the credential file are excluded.
 
 These are rejected: `.env` and `.env.*`, private-key files, `.pem`, `.key`, `.p12`, `.pfx`, `.ssh`, `.git`, `node_modules`, `credentials`, and `secrets`. A file whose first bytes contain a private-key header is rejected even when the name looks ordinary.
 

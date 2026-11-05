@@ -2,9 +2,9 @@
 
 Configured 2026-11-05. This is a separate project/save target, not an OS sandbox.
 
-- Original: C:/Users/wju78/Flockbay Games/Wildwood Hunters
-- Test: C:/Users/wju78/Flockbay Games/Wildwood Hunters - Picard Test
-- Verified runtime user data: C:/Users/wju78/AppData/Roaming/WildwoodHunters-PicardTest
+- Original: the private original game folder. Keep that path in the local worker profile, not in this file.
+- Test: the private test game folder.
+- Verified runtime user data: the private test user-data directory.
 - Creator worker profile remains in state/flockbay-agent/worker.json.
 - Test worker profile and ledger: state/flockbay-agent-test/. Credentials are referenced locally, not copied into the game or documentation.
 - Start-Test-Bridge.ps1 / Stop-Test-Bridge.ps1 manage the test worker. Never run both worker profiles together.

@@ -68,11 +68,13 @@ overwrite or automatic cleanup. It reads no configuration/credential, invokes
 no client/provider, creates no journal and changes no service or gate.
 
 Only after exact approval and installer hash verification, the existing Windows
-administrator SSH lane may feed that reviewed ASCII script through stdin:
+administrator SSH lane may feed that reviewed ASCII script through stdin. Set
+`PICARD_OPERATOR_SSH_IDENTITY` and `PICARD_OPERATOR_SSH_DESTINATION` in the
+private environment. Do not commit the key path or destination.
 
 ```powershell
 Get-Content -LiteralPath .\install-manual-client-f3b472d.py -Raw |
-  & ssh.exe -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=10 -i "$env:USERPROFILE\.ssh\board-event-relay-20261029" opc@141.148.50.78 'sudo -n /usr/bin/python3 -'
+  & ssh.exe -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=10 -i $env:PICARD_OPERATOR_SSH_IDENTITY $env:PICARD_OPERATOR_SSH_DESTINATION 'sudo -n /usr/bin/python3 -'
 ```
 
 Installation does not authorize using prepare/submit/result. Each real request
