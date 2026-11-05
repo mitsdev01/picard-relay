@@ -12,6 +12,8 @@ Picard Relay accepts a narrowly approved AI request, records it durably, sends i
 
 **Updating your relay?** [System update button and host connection](OWNER-UPDATES.md)
 
+**This fork:** [Preserving the connector and companion across updates](FORK-UPDATES.md)
+
 **Earned ranks and the space HUD:** [Owner features](OWNER-FEATURES.md) · [Physical badge research](BADGE-RESEARCH.md)
 
 **Before relying on it:** [Limitations](LIMITATIONS.md) · [Known work](WORK-REGISTER.md) · [Verified status](STATUS.md)
