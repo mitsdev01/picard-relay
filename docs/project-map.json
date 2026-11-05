@@ -180,6 +180,10 @@
     {
       "path": "experimental/compute-broker/src/repository-checks.mjs",
       "role": "pinned seven-group repository plan; offline npm, private home, Linux process-group deadlines and exact per-group result validation"
+    },
+    {
+      "path": "tools/coding-connector/server.mjs",
+      "role": "local stdio MCP connector for one exact workspace coding request; no command execution"
     }
   ],
   "release": {
@@ -217,7 +221,8 @@
     "experimental/compute-broker/VERIFICATION.md",
     "experimental/compute-broker/EXECUTION.md",
     "experimental/compute-broker/UNATTENDED.md",
-    "experimental/compute-broker/CODING-WORKFLOW.md"
+    "experimental/compute-broker/CODING-WORKFLOW.md",
+    "docs/CURSOR-CODING-CONNECTOR.md"
   ],
   "workRegister": "docs/work-register.json",
   "illustrations": [

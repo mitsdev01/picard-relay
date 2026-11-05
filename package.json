@@ -21,7 +21,8 @@
     "demo:mission-control": "node examples/mission-control.mjs",
     "demo:fixtures": "node examples/fixture-tasks.mjs",
     "demo:admission-preview": "node examples/admission-preview.mjs",
-    "preview:v1": "node examples/workspace-preview.mjs"
+    "preview:v1": "node examples/workspace-preview.mjs",
+    "test:coding-connector": "node --test tools/coding-connector/test/connector.test.mjs experimental/runtime-control/test/machine-client.test.mjs"
   },
   "license": "MIT"
 }

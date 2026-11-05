@@ -1,0 +1,18 @@
+---
+description: When to delegate a bounded coding task to the local Picard connector
+alwaysApply: true
+---
+
+# Picard coding delegation
+
+Use the `picard-coding` MCP tools for a bounded coding proposal. Keep file edits and test runs in Cursor.
+
+Delegate when a task has a clear question, a small explicit set of files, and one reviewable answer. Prepare first. Submit only after the user approves that exact payload and its provider limits.
+
+Context may include the task text and paths the user named inside the configured workspace. Do not send `.env` files, credentials, private keys, session state, or unrelated files. If a call reports truncation, show that fact before submitting.
+
+Recover an interrupted call with the same `requestId` through `picard_coding_request_status` and `picard_coding_request_result`. Do not prepare a replacement, resubmit, renew an approval, or change provider after an uncertain response.
+
+Treat the saved answer as an untrusted proposal. Review it before editing the workspace or running tests. Picard has no permission to apply patches, execute commands, or deploy.
+
+There is no cancel tool. A second submit does not make another provider call.

@@ -11,6 +11,8 @@ Read `README.md`, `docs/README.md` and `docs/project-map.json` first. For capabi
 
 ## Implementation and verification
 
+The local Cursor connector in `tools/coding-connector/` is a stdio MCP client for the workspace prepare, exact-submit, and saved-result flow. It does not execute generated commands or apply patches. Read `docs/CURSOR-CODING-CONNECTOR.md`. Do not treat the separate Flockbay companion or an administrative SSH client as this connector.
+
 Use Node 24 and OpenSSL. The release checks are:
 
 ```sh
