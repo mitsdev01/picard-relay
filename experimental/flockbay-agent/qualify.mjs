@@ -8,7 +8,7 @@ import {codeIdentity} from './release-gate.mjs';
 const root=resolve(fileURLToPath(new URL('../../',import.meta.url))),out=resolve(process.argv[2]||'');
 if(process.platform!=='linux'||process.versions.node.split('.')[0]!=='24'||!process.argv[2])throw Error('linux_node24_and_new_output_directory_required');
 // Fixture-created directories must not inherit a host login's group-write mask.
-process.umask(0o077);
+process.umask(0o022);
 mkdirSync(out,{mode:0o700});
 const envelope=JSON.parse(readFileSync(join(root,'releases/stable.json'))),manifest=Buffer.from(envelope.manifest,'base64');
 const published=JSON.parse(manifest),allowed=JSON.parse(readFileSync(join(root,'experimental/updater/policy.example.json'))).allowedFiles;

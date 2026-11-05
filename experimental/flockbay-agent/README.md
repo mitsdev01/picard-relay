@@ -17,3 +17,45 @@ Run tests with Node 24: `node --test experimental/flockbay-agent/test/*.test.mjs
 For repeatable agent access without web login, use the installed `picard.mjs` CLI: `status`, `prepare --prompt-file FILE --out FILE [--mode inspect|build --max-calls 8 --minutes 10]`, `start FILE --approve`, `show ID`, `events ID`, and `stop ID`. Preparation writes an unapproved request with a stable UUID; start explicitly approves that exact request. The local CLI uses the existing pinned SSH key/known-hosts configuration and sends JSON through stdin to a fixed host command; task text never enters shell command strings. The host client uses `/var/lib/picard-flockbay-agent/control.sock` (0600, service user, inside the private state directory). It shares the live worker catalogue, rate controller, validation and ledger with the browser. Public HTTP cannot opt into this trust through headers; worker credentials cannot submit missions. CLI missions record `submitted_via=ssh_private_control`. This uses the existing SSH account's sudo authority, not a new restricted SSH identity. No browser cookie is read, exported or stored. The discoverable `picard-live` skill documents the workflow for future chats. An SSH failure is not retried: inspect the original request ID before resubmitting or creating anything new.
 
 The deployment is a separate systemd service `picard-flockbay-agent`. It does not modify the original runtime or enroll the host updater. Rollback stops/disables that service and restores the checkpointed Caddy config; retain SQLite evidence. Windows Start/Stop scripts supervise only the owned bridge process. The bridge is not installed as a login task; run Start after reboot and keep Flockbay open on the pinned game.
+# Maintained companion and qualified updates
+
+The companion is maintained separately from Brian's signed 20-file runtime.
+Local branch `codex/companion-upgrade-gates` preserves the previous implementation
+before changes. No source is automatically pushed to Brian's repository.
+
+`npm --prefix experimental/flockbay-agent test` checks the companion. Full Linux
+qualification uses `node experimental/flockbay-agent/qualify.mjs NEW_OUTPUT_DIR`.
+Package Linux source with `git -c core.autocrlf=false archive`: the runner refuses
+runtime bytes that differ from the published manifest. It checks updater, runtime,
+real Unix sockets, documentation, companion normal/jitless, recovery and web-auth
+fixtures, retaining group exit codes and hashed logs. Passing source checks is not
+live browser/provider/game acceptance.
+
+Host support in `host-support/` adapts only the fixed updater installation paths
+to this Oracle host. The signed core remains unchanged. `guarded-update.mjs` is
+the sole systemd update entrypoint for manual, button and timer checks. Root-owned
+`/etc/picard-updater/compatibility.json` must approve the exact release, companion
+code hash, Windows worker code hash and project pin, with all qualification
+evidence and an expiry. New upstream releases are blocked until qualified.
+
+Maintenance acquisition is transactional with mission admission and repair.
+Running missions, unreviewed candidates and queued/sent/uncertain tool commands
+prevent acquisition. The barrier survives restarts, never expires automatically,
+and cannot be acquired by web sessions or worker credentials. Failed updates keep
+the barrier; inspect journals, health, exact identities and history before explicit
+operator release. Never clear uncertainty, renew a grant or replay a mission.
+
+Operator CLI: `picard.mjs maintenance-acquire REQUEST.json` takes `{id,reason}`
+with a fresh UUID. `maintenance-release REQUEST.json` takes the same `{id}`.
+The ID is consumed after release and cannot be reused. `status` reports the
+barrier, pending work and worker identity. A missing worker identity blocks update
+qualification but does not remove existing inspection/proposal capability.
+
+Update rollbacks restore code only, never older ledgers, markers or credentials.
+The companion deployment keeps protected code/state checkpoints and explicitly
+refreshes its recovery baseline only after readiness and history checks.
+
+Automatic game execution and promotion remain disabled by owner choice until a
+separately isolated Flockbay validator is provisioned. Patch candidates and bounded
+repairs remain inert. A successful relay update is not game-code acceptance.
+
