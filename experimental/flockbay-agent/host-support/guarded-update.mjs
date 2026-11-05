@@ -32,7 +32,7 @@ export async function main(){
  const {loadAdministratorPolicy,applyPreparedUpdate}=await import('/usr/local/lib/picard-updater/updater.mjs');
  const {decodeEnvelope}=await import('/usr/local/lib/picard-updater/pull.mjs');
  const policy=await loadAdministratorPolicy('/etc/picard-updater/policy.json',0);
- if(policy.source!=='https://raw.githubusercontent.com/bmartynowicz/picard-relay/main/releases/stable.json'||policy.signatureMode!=='sigstore'||policy.enabled!==true)throw Error('updater_enrollment_mismatch');
+ if(policy.source!=='https://raw.githubusercontent.com/mitsdev01/picard-relay/release-feed/releases/stable.json'||policy.signatureMode!=='sigstore'||policy.enabled!==true)throw Error('updater_enrollment_mismatch');
  const file='/var/lib/picard-updater-inbox/stable.json',st=lstatSync(file);
  if(!st.isFile()||st.isSymbolicLink()||st.size>3*1024*1024)throw Error('unsafe_inbox');
  const packet=decodeEnvelope(readFileSync(file),policy,Date.now()),releaseHash=sha(packet.manifestBytes);

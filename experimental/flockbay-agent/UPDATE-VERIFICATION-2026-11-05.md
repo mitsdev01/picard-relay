@@ -1,3 +1,46 @@
+# Fork migration follow-up — 2026-11-05
+
+The later approved migration installed fork v2.0.1 through the existing guarded updater.
+Source commit: 44322fc671f838aa80b53ee67e72d53037a46b08.
+Release hash: 5f07753446b4ac7988af0f4608ba002f7275a51b5a92de8d4226ad2793471a1d.
+Sequence: 1000001001; the previous 31001 was preserved and advanced normally.
+Signing run: https://github.com/mitsdev01/picard-relay/actions/runs/42073615393.
+Publication commit: 5e04ec78fbc13f7168f48c77b4e9cbcd8adba54b on release-feed.
+The exact workflow/main/commit signature and all 20 canonical source files verified.
+
+All eight Linux qualification groups passed with the actual migrated host support and
+companion. The verifier test retained its assertions with the expected repository changed
+to the fork. The new companion identity is
+304817e19e84f5eb9ebccba260457263dce43c55de22bfdd57403550374fa3cc.
+Only its guard's feed pin changed; the worker identity and exact test-project pin stayed
+unchanged. Core jobs/nonces/revocations and companion mission/command/event/artifact/repair
+fingerprints matched before and after. No provider calls were made. Isolated validation
+and promotion remain disabled. The prior release_not_qualified scheduled-check record was
+retained in the checkpoint; it was not a HOLD or unresolved invocation.
+
+Private host checkpoint: /var/backups/picard-fork-migration/20261105T174215Z.
+Qualification evidence: /var/lib/picard-updater/qualifications/5f07753446b4ac7988af0f4608ba002f7275a51b5a92de8d4226ad2793471a1d.
+The checkpoint includes old trust support/policy, environment, compatibility policy,
+recovery guard, online database backups and before/after evidence. Never restore databases
+to replay work. The new exact compatibility entry expires with the signed envelope,
+2026-11-12 17:21:53 UTC. Future releases need fresh qualification.
+
+The hash-only work-laptop-coding registry is installed at
+/etc/picard-relay/machine-clients.json, regular 0600, owned by picard-relay.
+Only BRIDGE_MACHINE_CLIENTS_FILE was appended to the service environment. Runtime loading
+and invalid-token rejection were checked as the service user. Public config/history/status
+requests without a valid credential returned 401. Core and companion are active; update,
+activity and owner-request triggers are restored. Further signing is disabled again.
+
+Positive authentication with the laptop's existing raw token remains a laptop acceptance
+check: that secret was not available here and was neither rotated nor retrieved. No live
+coding draft, workspace submission, or Groq acceptance request was created. Browser owner
+acceptance is separate from these API, physical-release and history-preservation checks.
+
+The older verification below describes the earlier upstream v1.0.31 installation.
+
+---
+
 # Qualified update verification — 2026-11-05
 
 ## Installed result
