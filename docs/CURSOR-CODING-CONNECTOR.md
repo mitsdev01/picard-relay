@@ -19,6 +19,8 @@ There is no cancel tool. The workspace API used here has no cancel route. The si
 
 A lost or uncertain submission is not sent again. Reuse the returned `requestId`. Preparing a different request requires an explicit new prepare call.
 
+Preparation errors after identity allocation also return `requestId`; retry preparation only with that exact id and unchanged input. This recovers the original inert draft and does not create a replacement request. Submission uncertainty still permits reads only.
+
 ## Start
 
 Cursor starts the server from `.cursor/mcp.json`:
@@ -58,7 +60,7 @@ This branch does not change the live relay. Bearer authentication works on the h
 
 1. Review this branch. Do not treat it as installed.
 2. Publish it through the existing signed source workflow after explicit approval. Do not push or deploy from this laptop unless that approval is given.
-3. Let the enrolled updater install that signed release, or follow `docs/OPERATIONS.md` for the existing host. Do not change the updater gate, project pin, game companion, or execution settings.
+3. Qualify the signed release with the existing custom companion gate before allowing the enrolled updater to install it. This fork's unchanged workflow signs only in `bmartynowicz/picard-relay` on `main`; pushing this branch does not publish an installable release. Do not bypass the signature policy or modify installed runtime files. Do not change the updater gate implementation, project pin, game companion, or execution settings.
 4. Install `machine-clients.json` on the host as a regular 0600 file owned by the runtime user, outside the signed source tree. A symlink or extra field is rejected.
 5. Add only `BRIDGE_MACHINE_CLIENTS_FILE=/absolute/path/machine-clients.json` to the existing service environment. Leave every other setting as it is.
 6. Restart the service once so it loads that variable. Later revocation does not need another restart.
@@ -71,6 +73,10 @@ The host file reader is Linux-only and fails closed on this Windows laptop. That
 Prepare reads only the paths named in that call, and only when they resolve inside `workspaceRoot`. The default root is `D:\src\picard`. The journal and the credential file are excluded.
 
 These are rejected: `.env` and `.env.*`, private-key files, `.pem`, `.key`, `.p12`, `.pfx`, `.ssh`, `.git`, `node_modules`, `credentials`, and `secrets`. A file whose first bytes contain a private-key header is rejected even when the name looks ordinary.
+
+Every selected path component must be free of symlinks and Windows junctions. Hard-linked files are rejected too. Exclusions apply to resolved paths as well as requested names, and opened-file identity is checked before reading. These checks do not detect every secret embedded in otherwise ordinary source files: review the exact selected context before approving submission.
+
+Each machine draft is durably bound to its client id. The laptop cannot adopt another client's draft, an owner-console draft, or a signed-board result by knowing an id. Its saved-result responses never include owner reviews, and its configuration response omits account-wide history statistics and progress. Reuse an id only for credential rotation of the same client, never for a different machine or user.
 
 Request text is at most 4,000 characters. Context is at most 4,000 characters. The combined provider input is at most 12,000 bytes. Truncation is reported with `[truncated]` and an omitted-character count. The provider remains Groq `openai/gpt-oss-20b`, one call, 4,096 output tokens, no tools, no retries, and no paid fallback. The draft lives 15 minutes. The approval proof lives 60 seconds and is used inside the same submit call.
 

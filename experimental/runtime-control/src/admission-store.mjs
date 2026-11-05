@@ -221,11 +221,22 @@ function createStore({dbPath,now=Date.now,randomNonce=()=>randomBytes(32).toStri
   if(!rows.length)return null;if(rows.length!==1||rows[0].expires!==ASSOCIATION_EXPIRY)stop('approval_record_invalid');
   const d=getWorkspaceDraft(rows[0].nonce.slice(prefix.length));if(!d||d.payload.eventId!==ref)stop('approval_record_invalid');return d;
  }
- function saveWorkspaceDraft(draft){
+ const clientPrefix=id=>PREFIX+'workspace:'+workspaceScope()+':client:'+id+':';
+ function getWorkspaceClient(requestId){
+  if(workspaceEnabled!==true||typeof requestId!=='string'||!/^[a-f0-9-]{36}$/.test(requestId))stop('request_invalid');
+  const prefix=clientPrefix(requestId),rows=db.prepare('SELECT nonce,expires FROM relay_nonces WHERE nonce GLOB ? LIMIT 2').all(prefix+'*');
+  if(!rows.length)return null;
+  const id=rows[0].nonce.slice(prefix.length);
+  if(rows.length!==1||rows[0].expires!==ASSOCIATION_EXPIRY||!/^[a-z0-9-]{1,50}$/.test(id))stop('approval_record_invalid');
+  return id;
+ }
+ function saveWorkspaceDraft(draft,clientId=null){
   if(workspaceEnabled!==true||draft.payload.ownerId!==reusableBinding?.ownerId)stop('production_admission_disabled');
+  if(clientId!==null&&(typeof clientId!=='string'||!/^[a-z0-9-]{1,50}$/.test(clientId)))stop('request_invalid');
   return transaction(()=>{
    const old=getWorkspaceDraft(draft.payload.requestId);
    if(old){
+    if(getWorkspaceClient(draft.payload.requestId)!==clientId)stop('not_registered');
     const same=old.payload.taskId===draft.payload.taskId&&old.payload.request.text===draft.payload.request.text&&canonical(old.payload.context)===canonical(draft.payload.context)&&old.approval.purpose===draft.approval.purpose&&old.configurationSha256===draft.configurationSha256;
     if(!same)stop('draft_conflict');return old;
    }
@@ -234,7 +245,9 @@ function createStore({dbPath,now=Date.now,randomNonce=()=>randomBytes(32).toStri
    for(const row of all){const d=decode(row);if(!get(d.payload?.eventId)&&d.approval?.expiresAt>clock())pending++;}
    if(all.length>=10000||pending>=16)stop('queue_capacity');
    db.prepare('INSERT INTO relay_nonces VALUES(?,?)').run(draftPrefix(draft.payload.requestId)+Buffer.from(canonical(draft)).toString('base64url'),ASSOCIATION_EXPIRY);
-   db.prepare('INSERT INTO relay_nonces VALUES(?,?)').run(PREFIX+'workspace:'+workspaceScope()+':ref:'+draft.payload.eventId+':'+draft.payload.requestId,ASSOCIATION_EXPIRY);return draft;
+   db.prepare('INSERT INTO relay_nonces VALUES(?,?)').run(PREFIX+'workspace:'+workspaceScope()+':ref:'+draft.payload.eventId+':'+draft.payload.requestId,ASSOCIATION_EXPIRY);
+   if(clientId!==null)db.prepare('INSERT INTO relay_nonces VALUES(?,?)').run(clientPrefix(draft.payload.requestId)+clientId,ASSOCIATION_EXPIRY);
+   return draft;
   });
  }
  function workspaceReview(ref){
@@ -373,7 +386,7 @@ function createStore({dbPath,now=Date.now,randomNonce=()=>randomBytes(32).toStri
    if(changed.changes!==1)return null;const claimed=get(row.event_id);return {...claimed,request_id:claimed.event_id};
   });
  }
- return Object.freeze({localTestOnly,mayInvoke:false,get,recordAttempt,issue,inspect,commit,commitSignedBridge,commitReusableBoard,getReusableBoard,getWorkspaceWork,commitWorkspace,saveWorkspaceDraft,getWorkspaceDraft,getWorkspaceDraftByRef,workspaceReview,workspaceReviewedRef,workspaceReviewedRefs,workspaceProgressVersion,saveWorkspaceReview,listReusableBoard,commitReusableFixture,relay,isApproved,grantSeenElsewhere,legacyAdmissionReady,hasEnrollmentUncertainty,reconcileEligible,claimEligible,
+ return Object.freeze({localTestOnly,mayInvoke:false,get,recordAttempt,issue,inspect,commit,commitSignedBridge,commitReusableBoard,getReusableBoard,getWorkspaceWork,commitWorkspace,saveWorkspaceDraft,getWorkspaceClient,getWorkspaceDraft,getWorkspaceDraftByRef,workspaceReview,workspaceReviewedRef,workspaceReviewedRefs,workspaceProgressVersion,saveWorkspaceReview,listReusableBoard,commitReusableFixture,relay,isApproved,grantSeenElsewhere,legacyAdmissionReady,hasEnrollmentUncertainty,reconcileEligible,claimEligible,
   close(){db.close();if(!relayStore)relay.close();},
  });
 }

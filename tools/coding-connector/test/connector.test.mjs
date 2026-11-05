@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {mkdirSync,mkdtempSync,readFileSync,realpathSync,writeFileSync} from 'node:fs';
+import {mkdirSync,mkdtempSync,readFileSync,realpathSync,writeFileSync,symlinkSync,linkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -52,6 +52,29 @@ test('authentication failure does not submit or retry',async()=>{
  const client=createCodingClient({origin:'https://fixture.invalid',token,workspaceRoot:dir,journal:createJournal(join(dir,'journal')),transport:async request=>{if(request.method==='POST')posts++;return {status:401,body:JSON.stringify({error:'auth_failed'})};}});
  await assert.rejects(client.prepare({title:'Synthetic helper',requestText:'Propose a label.',note:'Public note only.'}),error=>error instanceof CodingClientError&&error.code==='auth_failed');
  assert.equal(posts,0);
+});
+test('interrupted preparation returns its durable identity for exact recovery',async()=>{
+ const dir=root(),journal=createJournal(join(dir,'journal'));
+ const client=createCodingClient({origin:'https://fixture.invalid',token:'F'.repeat(43),workspaceRoot:dir,journal,transport:async()=>{throw new CodingClientError('transport_unconfirmed');}});
+ const response=await createConnector(client).call('picard_prepare_coding_request',{title:'Synthetic',requestText:'Review a synthetic helper.'});
+ const error=JSON.parse(response.content[0].text);
+ assert.equal(response.isError,true);assert.equal(error.error,'transport_unconfirmed');
+ assert.match(error.requestId,/^[a-f0-9-]{36}$/);assert.equal(journal.load(error.requestId).state,'preparing');
+ const again=await createConnector(client).call('picard_prepare_coding_request',{requestId:error.requestId,title:'Synthetic',requestText:'Review a synthetic helper.'});
+ assert.equal(JSON.parse(again.content[0].text).requestId,error.requestId);
+});
+
+test('context rejects secret directory junctions, file symlinks and hard-link aliases',()=>{
+ const dir=root();mkdirSync(join(dir,'secrets'));writeFileSync(join(dir,'secrets','settings.json'),'SYNTHETIC_SECRET');
+ symlinkSync(join(dir,'secrets'),join(dir,'ordinary'),process.platform==='win32'?'junction':'dir');
+ const input={workspaceRoot:dir,title:'Synthetic',requestText:'Review selected code.'};
+ assert.throws(()=>buildCodingContext({...input,paths:['ordinary/settings.json']}),e=>e.code==='context_excluded');
+ linkSync(join(dir,'secrets','settings.json'),join(dir,'ordinary.json'));
+ assert.throws(()=>buildCodingContext({...input,paths:['ordinary.json']}),e=>e.code==='context_excluded');
+ if(process.platform!=='win32'){
+  symlinkSync(join(dir,'secrets','settings.json'),join(dir,'alias.json'));
+  assert.throws(()=>buildCodingContext({...input,paths:['alias.json']}),e=>e.code==='context_excluded');
+ }
 });
 test('one submission survives interruption and a second submit does not call the provider again',async()=>{
  const token=randomBytes(32).toString('base64url');

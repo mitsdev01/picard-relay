@@ -61,16 +61,16 @@ export function createWorkspaceHandler({enabled=false,auth,store,binding,origins
   const value={v:1,acceptedWork,atLeast:acceptedWork===100};earnedCache={version,value};return value;
  }
  function draft(id){const d=store.getWorkspaceDraft(id);if(!d)stop('not_registered');return validateWorkspaceDraft(d,binding);}
- async function ownedResult(ref){
+ async function ownedResult(ref,{includeReviews=true}={}){
   const row=store.get(ref);if(!row||row.owner!==binding.ownerId)stop('not_registered');
   let p;try{p=JSON.parse(row.payload_json);await validateWork(p);}catch{stop('existing_record_invalid');}
   if(p.ownerId!==binding.ownerId||p.assistantId!==binding.assistantId||p.eventId!==ref||row.task!==p.taskId||row.message_id!==p.requestId||row.grant_id!==p.grantId||row.payload_hash!==p.payloadHash||row.grant_expires!==p.grantExpiresAt||!knownStates.includes(row.state))stop('existing_record_invalid');
   const approved=store.getWorkspaceWork(ref)??store.getReusableBoard(ref);
-  const response={v:1,ref,state:row.state,observedAt:new Date(now()).toISOString(),createdAt:row.created_at,updatedAt:row.updated_at,request:{title:p.context.title,text:p.request.text,context:p.context.latestFinding,taskId:p.taskId},resultAvailable:false,reasonCode:recentJobReason(row.state,row.last_error,row.state==='completed'&&!!row.result_json),review:store.workspaceReview(ref),provenance:{model:p.assistantId,requestId:p.requestId,inputSha256:admissionHash(canonical({requestText:p.request.text,taskContext:p.context})),payloadSha256:p.payloadHash,approvedAt:approved?.approval.issuedAt??Date.parse(p.request.createdAt),expiresAt:p.grantExpiresAt,maxOutputTokens:approved?.approval.maxCompletionTokens===4096?4096:512,source:store.getWorkspaceWork(ref)?'Owner console':store.getReusableBoard(ref)?'Signed task board':'Enrolled request',measuredTokens:null,billedUsd:null}};
+  const response={v:1,ref,state:row.state,observedAt:new Date(now()).toISOString(),createdAt:row.created_at,updatedAt:row.updated_at,request:{title:p.context.title,text:p.request.text,context:p.context.latestFinding,taskId:p.taskId},resultAvailable:false,reasonCode:recentJobReason(row.state,row.last_error,row.state==='completed'&&!!row.result_json),...(includeReviews?{review:store.workspaceReview(ref)}:{}),provenance:{model:p.assistantId,requestId:p.requestId,inputSha256:admissionHash(canonical({requestText:p.request.text,taskContext:p.context})),payloadSha256:p.payloadHash,approvedAt:approved?.approval.issuedAt??Date.parse(p.request.createdAt),expiresAt:p.grantExpiresAt,maxOutputTokens:approved?.approval.maxCompletionTokens===4096?4096:512,source:store.getWorkspaceWork(ref)?'Owner console':store.getReusableBoard(ref)?'Signed task board':'Enrolled request',measuredTokens:null,billedUsd:null}};
   if(row.state==='completed'){
    let r;try{r=JSON.parse(row.result_json);}catch{stop('existing_record_invalid');}
    if(r?.v!==1||r.eventId!==ref||r.ownerId!==p.ownerId||r.taskId!==p.taskId||r.requestId!==p.requestId||r.grantId!==p.grantId||r.assistantId!==p.assistantId||r.payloadHash!==p.payloadHash||r.responseId!=='resp:'+ref||typeof r.body!=='string'||!r.body.trim()||r.body.length>16000||!['information','question'].includes(r.outcome?.kind))stop('existing_record_invalid');
-   const resultSha256=admissionHash(r.body);if(response.review.history.some(review=>review.resultSha256!==resultSha256))stop('existing_record_invalid');
+   const resultSha256=admissionHash(r.body);if(includeReviews&&response.review.history.some(review=>review.resultSha256!==resultSha256))stop('existing_record_invalid');
    response.resultAvailable=true;response.result={body:r.body,kind:r.outcome.kind,sha256:resultSha256};
   }
   return response;
@@ -82,21 +82,22 @@ export function createWorkspaceHandler({enabled=false,auth,store,binding,origins
   let origin;try{const host=req.headers.host,u=new URL('https://'+host);if(typeof host==='string'&&u.host===host&&!u.username&&!u.password&&u.pathname==='/'&&!u.search&&!u.hash)origin=u.origin;}catch{}
   if(!allowed.has(origin)||req.headers.origin!==undefined&&req.headers.origin!==origin||!['same-origin','none',undefined].includes(req.headers['sec-fetch-site'])||req.method==='POST'&&req.headers.origin!==origin)return reply(403,{error:'auth_failed'});
   try{
-   let token='',machine=false;
+   let token='',machine=false,clientId=null;
    const authorization=req.headers.authorization;
    if(authorization!==undefined){
     const match=typeof authorization==='string'?/^Bearer ([A-Za-z0-9_-]{43})$/.exec(authorization):null;
     let client=null;
     if(match&&typeof authenticateMachine==='function'){try{client=await authenticateMachine(match[1]);}catch{client=null;}}
-    if(!client||client.scope!=='workspace-coding')return reply(401,{error:'auth_failed'});
+    if(!client||client.scope!=='workspace-coding'||typeof client.id!=='string'||!/^[a-z0-9-]{1,50}$/.test(client.id))return reply(401,{error:'auth_failed'});
     if(typeof req.headers.cookie==='string'&&req.headers.cookie.includes('__Host-PicardSession='))return reply(401,{error:'auth_failed'});
-    token=match[1];machine=true;
+    token=match[1];machine=true;clientId=client.id;
    }else{
     const cookies=typeof req.headers.cookie==='string'&&req.headers.cookie.length<=4096?req.headers.cookie.split(';').map(x=>x.trim()).filter(x=>x.startsWith('__Host-PicardSession=')):[];
     token=cookies.length===1?cookies[0].slice('__Host-PicardSession='.length):'';
     if(!machineToken.test(token)||!await auth.authenticate(token))return reply(401,{error:'auth_failed'});
    }
    if(machine&&!(req.method==='GET'&&(url==='/workspace/config'||readDraft||readResult)||req.method==='POST'&&['/workspace/drafts','/workspace/approvals','/workspace/requests'].includes(url)))return reply(403,{error:'auth_failed'});
+   const permittedDraft=id=>{if(machine&&store.getWorkspaceClient(id)!==clientId)stop('not_registered');return draft(id);};
    if(req.method==='GET'){
     if(historyPath){
      const query=new URL(url,'https://fixture.invalid').searchParams;
@@ -105,13 +106,15 @@ export function createWorkspaceHandler({enabled=false,auth,store,binding,origins
      for(const row of page.rows){const saved=store.get(row.ref);let p;try{p=JSON.parse(saved.payload_json);await validateWork(p);}catch{stop('existing_record_invalid');}if(saved.owner!==binding.ownerId||p.ownerId!==binding.ownerId||p.eventId!==row.ref||saved.payload_hash!==p.payloadHash)stop('existing_record_invalid');rows.push({...row,title:p.context.title});}
      return reply(200,{v:1,rows,nextCursor:page.nextCursor,observedAt:new Date(now()).toISOString()});
     }
-    if(readDraft){if(!uuid.test(readDraft[1]))stop('request_invalid');const d=draft(readDraft[1]);return reply(200,{v:1,draft:d,registered:!!store.get(d.payload.eventId),state:store.get(d.payload.eventId)?.state??(d.approval.expiresAt<=now()?'expired':'draft'),observedAt:new Date(now()).toISOString()});}
+    if(readDraft){if(!uuid.test(readDraft[1]))stop('request_invalid');const d=permittedDraft(readDraft[1]);return reply(200,{v:1,draft:d,registered:!!store.get(d.payload.eventId),state:store.get(d.payload.eventId)?.state??(d.approval.expiresAt<=now()?'expired':'draft'),observedAt:new Date(now()).toISOString()});}
     if(readResult){
+     if(machine){const d=store.getWorkspaceDraftByRef(readResult[1]);if(!d)stop('not_registered');permittedDraft(d.payload.requestId);if(store.get(readResult[1])&&!store.getWorkspaceWork(readResult[1]))stop('not_registered');}
      if(!store.get(readResult[1])){const d=store.getWorkspaceDraftByRef(readResult[1]);if(d){validateWorkspaceDraft(d,binding);return reply(200,{v:1,draft:d,registered:false,state:d.approval.expiresAt<=now()?'expired':'draft',observedAt:new Date(now()).toISOString()});}}
-     return reply(200,await ownedResult(readResult[1]));
+     return reply(200,await ownedResult(readResult[1],{includeReviews:!machine}));
     }
     let enrolled=false;try{policy();enrolled=true;}catch{}
     const availability=currentAvailability();
+    if(machine)return reply(200,{v:1,enabled:true,observedAt:new Date(now()).toISOString(),ready:enrolled&&ready(),blockingCode:enrolled?availability?.code??'configuration_unavailable':'configuration_unavailable',provider:'Groq',model:'openai/gpt-oss-20b',limits:{maxCalls:1,maxOutputTokens:4096,maxRequestCharacters:4000,maxContextCharacters:4000,maxTitleCharacters:200,maxCombinedInputBytes:12000,requestLifetimeMs:900000,approvalLifetimeMs:60000,activeJobs:8,attemptsPerMinute:10,tools:false,retries:0,paidFallback:false}});
     const jobs=store.relay.scopedStats({ownerId:binding.ownerId});
     let training=null,progress=null;try{
      const ref=store.workspaceReviewedRef(),saved=ref?await ownedResult(ref):null;
@@ -127,14 +130,14 @@ export function createWorkspaceHandler({enabled=false,auth,store,binding,origins
    let body;try{body=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks)));}catch{stop('request_invalid');}
    if(url==='/workspace/drafts'){
     policy();const d=await planWorkspaceDraft({body,binding,at:now(),grantId:randomUUID()});
-    const saved=store.saveWorkspaceDraft(d);return reply(201,{v:1,draft:saved,registered:!!store.get(saved.payload.eventId),state:store.get(saved.payload.eventId)?.state??(saved.approval.expiresAt<=now()?'expired':'draft'),observedAt:new Date(now()).toISOString()});
+    const saved=store.saveWorkspaceDraft(d,clientId);return reply(201,{v:1,draft:saved,registered:!!store.get(saved.payload.eventId),state:store.get(saved.payload.eventId)?.state??(saved.approval.expiresAt<=now()?'expired':'draft'),observedAt:new Date(now()).toISOString()});
    }
    if(reviewPath){
     if(!exact(body,['expectedRevision','decision','note','resultSha256']))stop('request_invalid');
     await ownedResult(reviewPath[1]);const review=store.saveWorkspaceReview({ref:reviewPath[1],...body});return reply(200,{v:1,review});
    }
    if(!exact(body,url==='/workspace/approvals'?['requestId']:['requestId','nonce','draftSha256','approve'])||!uuid.test(body.requestId??''))stop('request_invalid');
-   const d=draft(body.requestId),p=policy(),row=store.get(d.payload.eventId),sessionSha256=admissionHash(token);
+   const d=permittedDraft(body.requestId),p=policy(),row=store.get(d.payload.eventId),sessionSha256=admissionHash(token);
    const identity={scope,sessionSha256,catalogueSha256:binding.configurationSha256,entryId:body.requestId,slotId:'workspace',inputSha256:d.draftSha256};
    if(url==='/workspace/approvals'){
     if(row)return reply(200,{v:1,existing:true,ref:row.event_id,state:row.state});

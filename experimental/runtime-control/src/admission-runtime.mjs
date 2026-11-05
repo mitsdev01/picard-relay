@@ -13,10 +13,11 @@ import {groqHttpsFetch} from './https-fetch.mjs';
 import {TextDecoder} from 'node:util';
 
 const fingerprint=s=>[s.dev,s.ino,s.mode,s.uid,s.gid,s.nlink,s.size,s.mtimeNs,s.ctimeNs].map(String).join(':');
-export function readExistingAdmissionFile(file,maxBytes=16384){
+export function readExistingAdmissionFile(file,maxBytes=16384,requiredMode=null){
  let fd;try{
   if(process.platform!=='linux'||typeof file!=='string'||!path.isAbsolute(file)||path.resolve(file)!==file||fs.realpathSync(file)!==file)stop('admission_configuration_invalid');
   const s=fs.lstatSync(file,{bigint:true}),uid=BigInt(process.getuid()),gid=BigInt(process.getgid());
+  if(requiredMode!==null&&Number(s.mode&0o777n)!==requiredMode)stop('admission_configuration_invalid');
   if(!s.isFile()||s.nlink!==1n||![0n,uid].includes(s.uid)||(s.mode&0o027n)!==0n||(s.mode&0o400n)===0n||((s.mode&0o040n)!==0n&&s.gid!==gid)||s.size<1n||s.size>BigInt(maxBytes))stop('admission_configuration_invalid');
   fd=fs.openSync(file,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW|fs.constants.O_NONBLOCK);
   if(fingerprint(fs.fstatSync(fd,{bigint:true}))!==fingerprint(s))stop('admission_configuration_invalid');
@@ -56,7 +57,7 @@ export function readLegacyAdmissionMarkers(directory,expectedNames){
 export function createMachineAuthenticator(file){
  if(file==null||file==='')return null;
  if(typeof file!=='string')stop('admission_configuration_invalid');
- const load=()=>parseMachineClientRegistry(readExistingAdmissionFile(file,8192).text);
+ const load=()=>parseMachineClientRegistry(readExistingAdmissionFile(file,8192,0o600).text);
  load();
  return async token=>{try{return matchMachineClient(load(),token);}catch{return null;}};
 }

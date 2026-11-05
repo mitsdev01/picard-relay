@@ -1,5 +1,5 @@
 // Selected workspace context only. This module never executes file contents.
-import {closeSync,lstatSync,openSync,readSync,realpathSync,statSync} from 'node:fs';
+import {closeSync,constants,fstatSync,lstatSync,openSync,readSync,realpathSync} from 'node:fs';
 import {basename,isAbsolute,relative,resolve} from 'node:path';
 
 const DENY_SEGMENTS=new Set(['.git','.ssh','.gnupg','.aws','.azure','node_modules','credentials','secrets','.picard']);
@@ -38,11 +38,25 @@ export function buildCodingContext({workspaceRoot,journalDir=null,deniedFiles=[]
   if(deniedName(basename(rel)))throw contextError('context_excluded');
   const abs=resolve(rootReal,rel);
   let listed,fileReal;
-  try{listed=lstatSync(abs);fileReal=realpathSync(abs);}catch{throw contextError('context_excluded');}
-  if(!listed.isFile()&&!listed.isSymbolicLink())throw contextError('context_excluded');
+  try{
+   // Reject links in every component, including Windows directory junctions.
+   let component=rootReal;
+   for(const segment of segments){component=resolve(component,segment);if(lstatSync(component).isSymbolicLink())throw contextError('context_excluded');}
+   listed=lstatSync(abs);fileReal=realpathSync(abs);
+  }catch{throw contextError('context_excluded');}
+  if(!listed.isFile()||listed.nlink!==1)throw contextError('context_excluded');
   if(!inside(rootReal,fileReal)||journalReal&&(fileReal===journalReal||inside(journalReal,fileReal))||deniedReal.has(fileReal))throw contextError('context_excluded');
+  const resolvedParts=relative(rootReal,fileReal).split(/[\\/]+/);
+  if(resolvedParts.some(part=>DENY_SEGMENTS.has(part.toLowerCase()))||deniedName(basename(fileReal)))throw contextError('context_excluded');
   let opened;const buf=Buffer.alloc(32768);let n=0;
-  try{opened=openSync(fileReal,'r');n=readSync(opened,buf,0,buf.length,0);const info=statSync(fileReal);if(!info.isFile())throw contextError('context_excluded');}
+  try{
+   opened=openSync(fileReal,constants.O_RDONLY|(constants.O_NOFOLLOW??0));
+   const info=fstatSync(opened);
+   if(!info.isFile()||info.nlink!==1||info.dev!==listed.dev||info.ino!==listed.ino||realpathSync(abs)!==fileReal)throw contextError('context_excluded');
+   n=readSync(opened,buf,0,buf.length,0);
+   const after=fstatSync(opened);
+   if(after.size!==info.size||after.mtimeMs!==info.mtimeMs||after.ctimeMs!==info.ctimeMs||realpathSync(abs)!==fileReal)throw contextError('context_excluded');
+  }
   catch(error){if(error?.code==='context_excluded')throw error;throw contextError('context_excluded');}
   finally{if(opened!==undefined)closeSync(opened);}
   const sample=buf.subarray(0,Math.min(n,512)).toString('utf8');

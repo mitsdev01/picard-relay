@@ -18,7 +18,7 @@ const TOOLS=[
 function send(message){process.stdout.write(JSON.stringify(message)+'\n');}
 function ok(id,result){send({jsonrpc:'2.0',id,result});}
 function fail(id,code,message){send({jsonrpc:'2.0',id,error:{code,message}});}
-function toolError(code){return {content:[{type:'text',text:JSON.stringify({error:code,providerCall:false,executedByConnector:false})}],isError:true};}
+function toolError(code,requestId){return {content:[{type:'text',text:JSON.stringify({error:code,...(typeof requestId==='string'&&/^[a-f0-9-]{36}$/.test(requestId)?{requestId}:{}),providerCall:false,executedByConnector:false})}],isError:true};}
 function toolResult(value){return {content:[{type:'text',text:JSON.stringify(value)}],isError:false};}
 
 const ALLOWED={
@@ -39,7 +39,7 @@ export function createConnector(client){
     if(name==='picard_coding_request_status')return toolResult(await client.status(args.requestId));
     if(name==='picard_coding_request_result')return toolResult(await client.result(args.requestId));
     return toolError('request_invalid');
-   }catch(error){return toolError(error instanceof CodingClientError?error.code:'connector_failed');}
+   }catch(error){return toolError(error instanceof CodingClientError?error.code:'connector_failed',error instanceof CodingClientError?error.requestId:undefined);}
   }
  };
 }

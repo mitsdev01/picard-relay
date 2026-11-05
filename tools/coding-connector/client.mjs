@@ -17,6 +17,8 @@ export function createHttpsTransport(origin){
   const req=https.request({protocol:'https:',hostname:base.hostname,port:base.port||443,servername:base.hostname,method,path,headers,rejectUnauthorized:true,timeout:15000,agent:false},res=>{
    if(res.statusCode>=300&&res.statusCode<400){res.resume();reject(new CodingClientError('redirect_rejected'));return;}
    const chunks=[];let size=0;let failed=false;
+   const incomplete=()=>{if(!failed){failed=true;reject(new CodingClientError('transport_unconfirmed'));}};
+   res.on('error',incomplete);res.on('aborted',incomplete);
    res.on('data',chunk=>{if(failed)return;size+=chunk.length;if(size>65536){failed=true;res.destroy();reject(new CodingClientError('response_too_large'));return;}chunks.push(chunk);});
    res.on('end',()=>{if(!failed)resolve({status:res.statusCode,body:Buffer.concat(chunks).toString('utf8')});});
   });
@@ -85,6 +87,7 @@ export function createCodingClient({origin,token,journal,transport,workspaceRoot
   async prepare(input){
    const normalized=normalize(input??{});
    const requestId=normalized.requestId??randomUUID();
+   try{
    let record=journal.load(requestId);
    const stored={title:normalized.title,requestText:normalized.requestText,context:normalized.context,purpose:normalized.purpose,taskId:normalized.taskId};
    if(record&&!sameInput(record,stored))fail('draft_conflict');
@@ -99,6 +102,7 @@ export function createCodingClient({origin,token,journal,transport,workspaceRoot
     record=acceptDraft(record,posted.body);
    }else fail(remoteCode(existing.body));
    return {requestId,eventId:record.eventId,state:'prepared',recovered:false,providerCall:false,executedByConnector:false,truncated:normalized.truncated,omittedCharacters:normalized.omittedCharacters,included:normalized.included,payload:wire({...record.input,requestId}),...providerLimits};
+   }catch(error){if(error instanceof CodingClientError)error.requestId=requestId;throw error;}
   },
   async submit(requestId){
    if(!UUID.test(requestId??''))fail('request_invalid');
