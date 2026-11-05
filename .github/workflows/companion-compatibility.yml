@@ -1,0 +1,42 @@
+name: Qualify Picard companion (never deploy)
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'experimental/flockbay-agent/**'
+      - 'experimental/runtime-control/**'
+      - 'experimental/updater/**'
+      - 'releases/stable.json'
+      - '.github/workflows/companion-compatibility.yml'
+  push:
+    paths:
+      - 'experimental/flockbay-agent/**'
+      - 'experimental/runtime-control/**'
+      - 'experimental/updater/**'
+      - 'releases/stable.json'
+      - '.github/workflows/companion-compatibility.yml'
+permissions:
+  contents: read
+jobs:
+  qualification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.22.1'
+      - name: Qualify published core with companion, without provider calls
+        run: node experimental/flockbay-agent/qualify.mjs "$RUNNER_TEMP/picard-qualification"
+      - name: Report qualification evidence
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/picard-qualification/report.json"; then
+            cat "$RUNNER_TEMP/picard-qualification/report.json"
+          fi
+      - name: Show failing test diagnostics
+        if: failure()
+        run: |
+          find "$RUNNER_TEMP/picard-qualification" -name '*.log' -type f -exec tail -n 70 {} \;
