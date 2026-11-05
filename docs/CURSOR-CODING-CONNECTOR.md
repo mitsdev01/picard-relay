@@ -2,9 +2,12 @@
 
 Local stdio MCP connector for this laptop. It prepares one Picard workspace request, submits that exact request when asked, and reads the saved proposal. Picard does not execute the proposal. Cursor remains responsible for editing files and running tests after review.
 
-Connector version: `1.0.0`.
+Connector version: `1.1.0`.
 
-The current checkout is upstream `picard-relay` plus this connector. It does not include the unpublished companion or update-gate changes from the other PC. Those changes are not required for this coding flow.
+The fork also preserves the separate Flockbay companion and update gates. For
+explicit workspace selection, backup/apply/test/rollback, see
+[Trusted workspace tasks](TRUSTED-WORKSPACES.md). That opt-in local extension
+uses a separate owner enrollment; the original four tools remain proposal-only.
 
 ## What Cursor can call
 
@@ -29,7 +32,7 @@ Cursor starts the server from `.cursor/mcp.json`:
 - Arguments: `D:\src\picard\tools\coding-connector\server.mjs`
 - Config file: `C:\Users\Billu\.picard\coding-client.json`
 
-Reload the Cursor window after changing that file. The server writes `picard-coding-connector 1.0.0 ready` to stderr. Stdout is only MCP JSON.
+Reload the Cursor window after changing that file. The server writes `picard-coding-connector 1.1.0 ready` to stderr. Stdout is only MCP JSON.
 
 The private config contains the origin, the raw token, `workspaceRoot`, and `journalDir`. The example shape is `tools/coding-connector/coding-client.example.json`. Do not commit the real file.
 
@@ -56,11 +59,15 @@ The Groq key stays on the relay. Do not copy the Oracle administrator SSH key, b
 
 ## Deploy the server change
 
-This branch does not change the live relay. Bearer authentication works on the host only after the new runtime is installed. Until then, a live tool call fails with `auth_failed`. Local tests do not prove live authentication.
+The trusted-workspace extension changes the laptop connector only. An already
+enrolled relay needs no new route, credential or deployment for this feature.
+The following enrollment steps are for a host that does not yet support the
+coding bearer client. Do not repeat them on an already enrolled host. Local tests
+do not prove live authentication.
 
 1. Review this branch. Do not treat it as installed.
 2. Publish it through the existing signed source workflow after explicit approval. Do not push or deploy from this laptop unless that approval is given.
-3. Qualify the signed release with the existing custom companion gate before allowing the enrolled updater to install it. This fork's unchanged workflow signs only in `bmartynowicz/picard-relay` on `main`; pushing this branch does not publish an installable release. Do not bypass the signature policy or modify installed runtime files. Do not change the updater gate implementation, project pin, game companion, or execution settings.
+3. Qualify the signed release with the existing custom companion gate before allowing the enrolled updater to install it. Follow [the fork update procedure](FORK-UPDATES.md); pushing a branch does not publish an installable release. Do not bypass signature policy or modify installed runtime files, project pins or execution settings.
 4. Install `machine-clients.json` on the host as a regular 0600 file owned by the runtime user, outside the signed source tree. A symlink or extra field is rejected.
 5. Add only `BRIDGE_MACHINE_CLIENTS_FILE=/absolute/path/machine-clients.json` to the existing service environment. Leave every other setting as it is.
 6. Restart the service once so it loads that variable. Later revocation does not need another restart.

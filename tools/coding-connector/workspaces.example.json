@@ -1,0 +1,12 @@
+{
+  "v": 1,
+  "stateDir": "C:\\Users\\YOUR_USER\\.picard\\workspace-transactions",
+  "workspaces": [
+    {
+      "id": "easyjob",
+      "root": "D:\\src\\EasyJobCloud-v2",
+      "allowApply": false,
+      "testCommands": []
+    }
+  ]
+}

@@ -5,8 +5,9 @@ import {createInterface} from 'node:readline';
 import {loadCodingConfig} from './config.mjs';
 import {createJournal} from './journal.mjs';
 import {createCodingClient,createHttpsTransport,CodingClientError} from './client.mjs';
+import {createWorkspaceToolHandler,WORKSPACE_TOOLS} from './workspace-tools.mjs';
 
-export const CONNECTOR_VERSION='1.0.0';
+export const CONNECTOR_VERSION='1.1.0';
 const PROTOCOL='2025-03-26';
 const TOOLS=[
  {name:'picard_prepare_coding_request',description:'Prepare one inert Picard coding draft from the task and explicitly selected workspace files. This does not call the provider, approve the request, execute commands, or apply changes. Credentials, environment files, private keys, and paths outside the configured workspace are rejected. A returned requestId is durable; reuse it after a transport interruption instead of starting another draft.',inputSchema:{type:'object',additionalProperties:false,required:['title','requestText'],properties:{title:{type:'string',minLength:1,maxLength:200},requestText:{type:'string',minLength:1,maxLength:4000},purpose:{type:'string',enum:['sanitized-source-proposal','public-source-review']},taskId:{type:'string',maxLength:200},note:{type:'string',maxLength:4000},paths:{type:'array',maxItems:8,items:{type:'string',minLength:1,maxLength:240}},requestId:{type:'string',format:'uuid'}}}},
@@ -65,6 +66,12 @@ function start(){
   const config=loadCodingConfig(process.env.PICARD_CODING_CONFIG);
   const client=createCodingClient({origin:config.origin,token:config.token,workspaceRoot:config.workspaceRoot,journalDir:config.journalDir,deniedFiles:[config.configFile],journal:createJournal(config.journalDir),transport:createHttpsTransport(config.origin)});
   connector=createConnector(client);
+  if(process.env.PICARD_WORKSPACES_FILE){
+   const legacy=connector;let workspace;
+   try{workspace=createWorkspaceToolHandler(config,process.env.PICARD_WORKSPACES_FILE);}
+   catch{workspace={tools:()=>WORKSPACE_TOOLS,call:async()=>toolError('workspace_configuration_unavailable')};}
+   connector={tools:()=>[...legacy.tools(),...workspace.tools()],call:(name,args)=>WORKSPACE_TOOLS.some(t=>t.name===name)?workspace.call(name,args):legacy.call(name,args)};
+  }
   process.stderr.write('picard-coding-connector '+CONNECTOR_VERSION+' ready\n');
  }catch{
   connector={tools:()=>TOOLS,call:async()=>toolError('configuration_unavailable')};

@@ -117,7 +117,7 @@ test('a lost submission response is not posted again',async()=>{
   assert.equal(calls.filter(call=>call.path==='/workspace/requests'&&call.method==='POST').length,0);
  }finally{fixture.close();}
 });
-test('connector source does not execute proposals',()=>{
+test('legacy relay client does not execute proposals; local transactions require separate enrollment',()=>{
  for(const name of ['../server.mjs','../client.mjs','../context.mjs','../journal.mjs','../config.mjs']){
   const text=readFileSync(fileURLToPath(new URL(name,import.meta.url)),'utf8');
   assert.equal(text.includes('child_process'),false);assert.equal(text.includes('execSync'),false);assert.equal(text.includes('spawn('),false);
@@ -140,12 +140,12 @@ test('MCP initialization, discovery and argument validation stay on stdout',asyn
  const send=async message=>{const response=ready();child.stdin.write(JSON.stringify(message)+'\n');return response;};
  try{
   const init=await send({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'synthetic',version:'0'}}});
-  assert.equal(init.result.serverInfo.name,'picard-coding');assert.equal(init.result.serverInfo.version,'1.0.0');assert.deepEqual(init.result.capabilities.tools,{listChanged:false});
+  assert.equal(init.result.serverInfo.name,'picard-coding');assert.equal(init.result.serverInfo.version,'1.1.0');assert.deepEqual(init.result.capabilities.tools,{listChanged:false});
   child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
   const listed=await send({jsonrpc:'2.0',id:2,method:'tools/list'});
   assert.deepEqual(listed.result.tools.map(tool=>tool.name),['picard_prepare_coding_request','picard_submit_coding_request','picard_coding_request_status','picard_coding_request_result']);
   const invalid=await send({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'picard_prepare_coding_request',arguments:{title:'Synthetic',requestText:'Propose a label.',command:'calc.exe'}}});
   assert.equal(invalid.result.isError,true);assert.equal(JSON.parse(invalid.result.content[0].text).error,'request_invalid');
-  assert.equal(stdout.includes(token),false);assert.equal(stderr.includes(token),false);assert.match(stderr,/picard-coding-connector 1\.0\.0 ready/);
+  assert.equal(stdout.includes(token),false);assert.equal(stderr.includes(token),false);assert.match(stderr,/picard-coding-connector 1\.1\.0 ready/);
  }finally{child.kill();await new Promise(resolve=>child.once('exit',resolve));}
 });
