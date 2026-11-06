@@ -7,6 +7,14 @@ import {WorkspaceError,requireThat,sha,readSource,locate,relativeFile,directory}
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const terminal=new Set(['passed','rolled_back','cancelled','baseline_failed']);
 const outputContract='Return only JSON: {"v":1,"edits":[{"path":"relative/path","beforeSha256":"provided full-file hash","search":"exact nonempty unique text within the supplied excerpt","replace":"replacement text"}]}. For a declared new file use {"path":"relative/path","beforeSha256":null,"create":"full UTF-8 contents"}. No other fields, commands, prose, guessed files or markdown. At most one edit per file. If context is insufficient return {"v":1,"edits":[]}. Preserve unrelated code.';
+function proposalText(body){const marked=body.match(/^\[Groq \/ [^\r\n\]]+\]\r?\n([\s\S]*)$/);return marked?marked[1]:body;}
+function visibleNewlines(value){return value.replace(/\\r/g,'\r').replace(/\\n/g,'\n').replace(/\\t/g,'\t');}
+function resolvedAnchor(before,search,replace){
+ if(before.includes(search))return {search,replace};
+ const decodedSearch=visibleNewlines(search),decodedReplace=visibleNewlines(replace);
+ if(decodedSearch!==search&&before.includes(decodedSearch))return {search:decodedSearch,replace:decodedReplace};
+ return {search,replace};
+}
 function durable(file,bytes,{exclusive=false,mode=0o600}={}) {
  const tmp=exclusive?file:file+'.'+randomUUID()+'.tmp';const fd=fs.openSync(tmp,'wx',mode);
  try{fs.writeFileSync(fd,bytes);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
@@ -140,7 +148,7 @@ export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTes
     const result=await makeClient(w).result(t.id);
     if(!result.resultAvailable)return {...view(t),remote:result};
     requireThat(result.state==='completed'&&!result.truncated&&typeof result.result?.body==='string'&&sha(result.result.body)===result.result.sha256,'result_integrity_invalid');
-    let proposal;try{proposal=JSON.parse(result.result.body);}catch{throw new WorkspaceError('proposal_must_be_json');}
+    let proposal;try{proposal=JSON.parse(proposalText(result.result.body));}catch{throw new WorkspaceError('proposal_must_be_json');}
     requireThat(proposal?.v===1&&Object.keys(proposal).sort().join(',')==='edits,v'&&Array.isArray(proposal.edits)&&proposal.edits.length>0&&proposal.edits.length<=8,'proposal_invalid_or_insufficient_context');
     const seen=new Set();
     for(const edit of proposal.edits){
@@ -149,7 +157,8 @@ export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTes
      if(f.before===null){requireThat(Object.keys(edit).sort().join(',')==='beforeSha256,create,path'&&typeof edit.create==='string','creation_invalid');after=edit.create;}
      else {
       requireThat(Object.keys(edit).sort().join(',')==='beforeSha256,path,replace,search'&&typeof edit.search==='string'&&edit.search.length>0&&typeof edit.replace==='string','edit_invalid');
-      const before=Buffer.from(f.before,'base64').toString('utf8'),at=before.indexOf(edit.search);
+      const before=Buffer.from(f.before,'base64').toString('utf8'),anchor=resolvedAnchor(before,edit.search,edit.replace);
+      edit.search=anchor.search;edit.replace=anchor.replace;const at=before.indexOf(edit.search);
       requireThat(at>=f.start&&at+edit.search.length<=f.end&&before.indexOf(edit.search,at+1)===-1,'edit_anchor_not_unique_or_not_in_context');
       after=before.slice(0,at)+edit.replace+before.slice(at+edit.search.length);
      }
