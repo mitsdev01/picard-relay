@@ -419,7 +419,7 @@ function captainConsoleHtml(html){
  const rank='<small id="training-rank" hidden></small>';
  replace(rank,'<small class="captain-brand-subtitle">Command interface</small>');
  replace('<p>YOUR COMMISSION</p>','<p>YOUR COMMISSION</p>'+rank);
- replace('<div class="workspace"','<header class="captain-topbar"><span class="captain-breadcrumb">PICARD RELAY / <span>CONSOLE</span></span>'+utilities.replace('<p class="sidebar-foot">MAKE IT SO.</p>','')+'</header><div class="workspace"');
+ replace('<div class="workspace"','<header class="captain-topbar"><span class="captain-breadcrumb">PICARD RELAY / <span>CONSOLE</span></span><span class="captain-auth-breadcrumb">PICARD RELAY / OWNER ACCESS</span>'+utilities.replace('<p class="sidebar-foot">MAKE IT SO.</p>','')+'</header><div class="workspace"');
  const action='<button id="training-action" type="button" disabled>Check progress</button>';
  replace(action,'');
  replace('<h1 id="heading-overview" tabindex="-1">Overview</h1></div></div>','<p class="captain-eyebrow">Relay operations</p><h1 id="heading-overview" tabindex="-1">You have the conn.</h1><p class="captain-intro">Your relay is standing by for its next assignment.</p></div>'+action+'</div>');
@@ -510,4 +510,22 @@ body:has(.console.captain){margin:0}.console.captain{width:100%;max-width:none;m
 .console.captain .captain-doors span:after{content:"";position:absolute;inset:14px;border:1px solid #aa795b25;border-radius:12px;background:linear-gradient(120deg,#ffffff03,transparent 40%);pointer-events:none}
 @media(max-width:700px){.captain-window-trim{inset:12px;padding:10px;font-size:8px;letter-spacing:.12em}.captain-window-trim span:last-child{display:none}.captain-planet{right:-48%;bottom:-12%;width:350px}.console.captain[data-starfield=true] .hud-instruments{left:12px;right:12px;bottom:12px;padding:10px;gap:6px;min-height:138px}.console.captain[data-starfield=true] #private{bottom:164px;max-height:calc(100% - 180px)}.console.captain .hud-instruments #hud-next{padding:8px 12px;justify-self:stretch}.console.captain .hud-instruments .hud-numeral{font-size:28px}}
 @media(prefers-reduced-motion:reduce){.captain .captain-stars{animation:none!important;transform:none!important}}
+/* Sign-in floats above the working doors, remaining usable in either space mode. */
+.console.captain:has(#auth:not([hidden])) .captain-window{display:grid;align-items:center;justify-items:center;padding:clamp(20px,5vw,72px);background:radial-gradient(ellipse at 50% 38%,#63203930,transparent 65%)}
+.console.captain:has(#auth:not([hidden])) .captain-sidebar-rank{display:none}
+.console.captain[data-starfield=true]:has(#auth:not([hidden])) .captain-window{overflow:auto}
+.console.captain .captain-auth-breadcrumb{display:none}
+.console.captain:has(#auth:not([hidden])) .captain-breadcrumb{display:none}
+.console.captain:has(#auth:not([hidden])) .captain-auth-breadcrumb{display:block;font-size:12px;letter-spacing:.12em}
+.console.captain #auth{z-index:4;width:100%;max-width:480px;margin:auto;padding:clamp(24px,4vw,44px);border:1px solid #a56b7b;border-radius:24px;background:linear-gradient(145deg,#29131ee8,#110c12d9 75%);backdrop-filter:blur(14px);box-shadow:0 24px 70px #0007,inset 0 1px #efcf8d20}
+.console.captain #auth:before{content:"COMMAND ACCESS";display:block;color:var(--accent);font-size:11px;font-weight:600;letter-spacing:.2em;margin-bottom:22px;border-top:3px solid #d68b3b;padding-top:22px}
+.console.captain #auth h2{font-size:clamp(28px,3vw,36px);line-height:1.2;font-weight:650;letter-spacing:-.035em;margin-bottom:12px}
+.console.captain #auth>p{line-height:1.6;font-size:14px;color:var(--muted);margin-bottom:26px}
+.console.captain #auth label{color:var(--text);font-size:14px;margin-top:18px}
+.console.captain #auth input{border:1px solid #825262;border-radius:10px;background:#0c090e;padding:13px 14px;min-height:48px}
+.console.captain #auth input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.console.captain #auth .auth-submit{width:100%;min-height:48px;margin-top:24px;border:1px solid #b25b73;border-radius:10px;background:linear-gradient(#792540,#4e1429);color:var(--text);font-weight:650}
+.console.captain #auth .auth-submit:hover:not(:disabled){background:linear-gradient(#91304e,#621c34);border-color:var(--accent)}
+.console.captain #auth .auth-message{margin:20px 0 0;padding-top:16px;border-top:1px solid var(--line);color:var(--warn);font-size:13px;overflow-wrap:anywhere}
+@media(max-width:700px){.console.captain:has(#auth:not([hidden])) .captain-window{padding:16px 8px;align-items:start}.console.captain #auth{margin:16px auto;border-radius:18px}.console.captain:has(#auth:not([hidden])) .captain-auth-breadcrumb{font-size:10px}}
 `;
