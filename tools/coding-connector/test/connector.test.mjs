@@ -146,6 +146,6 @@ test('MCP initialization, discovery and argument validation stay on stdout',asyn
   assert.deepEqual(listed.result.tools.map(tool=>tool.name),['picard_prepare_coding_request','picard_submit_coding_request','picard_coding_request_status','picard_coding_request_result']);
   const invalid=await send({jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'picard_prepare_coding_request',arguments:{title:'Synthetic',requestText:'Propose a label.',command:'calc.exe'}}});
   assert.equal(invalid.result.isError,true);assert.equal(JSON.parse(invalid.result.content[0].text).error,'request_invalid');
-  assert.equal(stdout.includes(token),false);assert.equal(stderr.includes(token),false);assert.match(stderr,/picard-coding-connector 1\.1\.1 ready/);
+  assert.equal(stdout.includes(token),false);assert.equal(stderr.includes(token),false);assert.match(stderr,/picard-coding-connector 1\.1\.2 ready/);
  }finally{child.kill();await new Promise(resolve=>child.once('exit',resolve));}
 });
