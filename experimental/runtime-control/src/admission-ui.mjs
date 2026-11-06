@@ -412,6 +412,11 @@ function captainConsoleHtml(html){
  const replace=(from,to)=>{if(html.split(from).length!==2)throw Error('captain_theme_contract_changed');html=html.replace(from,to);};
  for(const id of ['console-surface','logo-wrap','navigation','private','heading-overview','health-heading','training-progress','activity-list','hud-instruments'])if(html.split('id="'+id+'"').length!==2)throw Error('captain_theme_contract_changed');
  replace('class="console"','class="console captain" data-console-theme="captain"');
+ // Presentation only, after the existing login AND status validation succeed.
+ // Fail compilation if upstream changes this authentication completion point.
+ replace("await status();}\n catch(error){showAuth(setup", "await status();"+CAPTAIN_LOGIN_REVEAL+"}\n catch(error){showAuth(setup");
+ // Clear private state first; closing is visual and never delays revocation.
+ replace('clearPrivate();clearInputs();authMode=mode;', 'clearPrivate();clearInputs();'+CAPTAIN_AUTH_CLOSE+'authMode=mode;');
  replace('<span id="refresh-label">','<svg class="captain-refresh-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 10a8 8 0 0 0-14-4L3 9m0-5v5h5M4 14a8 8 0 0 0 14 4l3-3m0 5v-5h-5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="refresh-label">');
  const utilities=html.match(/<div class="console-utilities">[\s\S]*?<p class="sidebar-foot">MAKE IT SO\.<\/p>/)?.[0];
  if(!utilities)throw Error('captain_theme_contract_changed');
@@ -419,6 +424,7 @@ function captainConsoleHtml(html){
  const rank='<small id="training-rank" hidden></small>';
  replace(rank,'<small class="captain-brand-subtitle">Command interface</small>');
  replace('<p>YOUR COMMISSION</p>','<p>YOUR COMMISSION</p>'+rank);
+ replace('<div class="captain-sidebar-rank">','<div class="captain-access-panel"><p class="captain-access-label">OWNER ACCESS</p><h2>Awaiting<br>authorization</h2><p>Sign in to take the conn.</p><div class="captain-access-trace" aria-hidden="true"><span></span><span></span><span></span></div><div class="captain-access-foot"><span aria-hidden="true">◇</span><p>YOUR PRIVATE CONSOLE<small>Jobs · Requests · Relay status</small></p></div></div><div class="captain-sidebar-rank">');
  replace('<div class="workspace"','<header class="captain-topbar"><span class="captain-breadcrumb">PICARD RELAY / <span>CONSOLE</span></span><span class="captain-auth-breadcrumb">PICARD RELAY / OWNER ACCESS</span>'+utilities.replace('<p class="sidebar-foot">MAKE IT SO.</p>','')+'</header><div class="workspace"');
  const action='<button id="training-action" type="button" disabled>Check progress</button>';
  replace(action,'');
@@ -437,6 +443,9 @@ function captainConsoleHtml(html){
  replace('</style>',CAPTAIN_STYLE.replace(/\/\*[\s\S]*?\*\//g,'')+'\n</style>');
  return html;
 }
+
+const CAPTAIN_LOGIN_REVEAL="if(authenticated){starfield=true;hudExpanded=true;starClicks=0;renderHUD();$('console-surface').dataset.starfield='true';$('logo-wrap').setAttribute('aria-pressed','true');$('logo-wrap').title='Starfield on · five clicks to switch off';}";
+const CAPTAIN_AUTH_CLOSE="starfield=false;hudExpanded=false;starClicks=0;renderHUD();$('console-surface').dataset.starfield='false';$('logo-wrap').setAttribute('aria-pressed','false');$('logo-wrap').title='Click five times for the stars';";
 
 // Decorative, deterministic scenery. No provider, network asset or live telemetry.
 function captainSpaceScene(){
@@ -489,9 +498,19 @@ body:has(.console.captain){margin:0}.console.captain{width:100%;max-width:none;m
 .console.captain .refresh{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:34px;min-width:120px;padding:4px 18px;border:1px solid #d9b86f;border-radius:10px;background:linear-gradient(#171215,#09080b);color:#faf2de;font-size:14px;font-weight:500;box-shadow:inset 0 0 0 1px #efd18d0b}.console.captain .refresh:hover:not(:disabled){background:linear-gradient(#292018,#100d10);border-color:#f3d99b;color:#fff7e5}.captain-refresh-icon{width:19px;height:19px;flex:none;color:#efdcb0}
 @media(min-width:1101px){.console.captain .captain-sidebar-rank:after{content:"";position:absolute;right:0;bottom:-18px;width:40px;height:18px;background:#df8332;border-left:4px solid #0c090e;border-radius:0 0 22px 0;pointer-events:none}}
 /* Keep the closing doors above the restored dashboard until they meet. */
-@keyframes captain-return{from{opacity:0;visibility:hidden}to{opacity:1;visibility:visible}}.console.captain:not([data-starfield=true]) #private{animation:captain-return 950ms step-end}.console.captain[data-motion=off] #private{animation:none}
+@keyframes captain-panel-open{0%,72%{opacity:0;visibility:hidden}100%{opacity:1;visibility:visible}}
+@keyframes captain-panel-close{0%{opacity:1}17%,82%{opacity:0}100%{opacity:1}}
+.console.captain[data-motion=on][data-starfield=true] :is(#auth,#private){animation:captain-panel-open 1320ms ease both}
+.console.captain[data-motion=on][data-starfield=false] :is(#auth,#private){animation:captain-panel-close 1450ms ease both}
+.console.captain[data-motion=on][data-starfield=false] .captain-doors span{transition-delay:250ms}
+.console.captain[data-motion=on][data-starfield=false] .captain-doors{z-index:1;transition:z-index 0s 1200ms}
+.console.captain[data-motion=off] :is(#auth,#private){animation:none}
+.console.captain[data-motion=on] .hud-instruments{opacity:1;transition:opacity 250ms ease,display 250ms allow-discrete}
+.console.captain[data-motion=on] .hud-instruments[hidden]{opacity:0}
+.console.captain[data-motion=on][data-starfield=true] .hud-instruments:not([hidden]){transition:opacity 350ms ease 950ms,display 0s allow-discrete}
+@starting-style{.console.captain[data-motion=on][data-starfield=true] .hud-instruments:not([hidden]){opacity:0}}
 .console.captain .space-scene{display:block}.console.captain[data-starfield=true] .captain-doors{z-index:3;transition:none}.console.captain[data-motion=off] .captain-doors{transition:none}
-@media(prefers-reduced-motion:reduce){.console.captain .captain-doors,.console.captain #private,.captain #private section,.captain .signal h2:before{animation:none!important}}
+@media(prefers-reduced-motion:reduce){.console.captain .captain-doors,.console.captain #auth,.console.captain #private,.captain #private section,.captain .signal h2:before{animation:none!important}.console.captain .captain-doors span,.console.captain .hud-instruments{transition:none!important}}
 /* Observation window: restrained depth, with no invented operational readings. */
 .console.captain .captain-observation{background:radial-gradient(ellipse at 64% 36%,#3b335429,transparent 48%),radial-gradient(ellipse at 28% 65%,#163a502e,transparent 60%),#04070e;box-shadow:inset 0 0 0 1px #b894633d,inset 0 0 80px #0009}
 .captain-stars{position:absolute;inset:-5%;width:110%;height:110%;opacity:.85;transform-origin:center;animation:none}
@@ -513,6 +532,17 @@ body:has(.console.captain){margin:0}.console.captain{width:100%;max-width:none;m
 /* Sign-in floats above the working doors, remaining usable in either space mode. */
 .console.captain:has(#auth:not([hidden])) .captain-window{display:grid;align-items:center;justify-items:center;padding:clamp(20px,5vw,72px);background:radial-gradient(ellipse at 50% 38%,#63203930,transparent 65%)}
 .console.captain:has(#auth:not([hidden])) .captain-sidebar-rank{display:none}
+.console.captain .captain-access-panel{display:none}
+@media(min-width:1101px){
+ .console.captain:has(#auth:not([hidden])) .captain-access-panel{display:flex;flex:1;min-height:260px;flex-direction:column;position:relative;margin:24px -10px -16px -34px;padding:28px 20px 30px 34px;border-top:1px solid #70374c;border-left:18px solid #702039;border-bottom:16px solid #702039;border-radius:38px 0 22px 48px;background:linear-gradient(155deg,#27101980,#0d080c 75%)}
+ .console.captain .captain-access-panel:after{content:"";position:absolute;right:0;bottom:-16px;width:40px;height:16px;background:#df8332;border-left:4px solid #0c090e;border-radius:0 0 22px 0}
+ .console.captain .captain-access-label{font-size:10px;letter-spacing:.18em;color:var(--accent);margin:0 0 16px}
+ .console.captain .captain-access-panel h2{font-size:21px;line-height:1.35;font-weight:500;margin:0 0 12px;color:var(--text)}
+ .console.captain .captain-access-panel>p:not(.captain-access-label){font-size:12px;line-height:1.6;color:var(--muted);margin:0}
+ .console.captain .captain-access-trace{flex:1;min-height:36px;display:flex;gap:7px;margin:26px 0;background:linear-gradient(#70374c,#70374c00) left/1px 100% no-repeat;padding-left:16px;align-items:center}
+ .console.captain .captain-access-trace span{height:4px;width:24px;border-radius:4px;background:#70374c}.console.captain .captain-access-trace span:first-child{background:#c89a5a}
+ .console.captain .captain-access-foot{border-top:1px solid #70374c;padding-top:18px;display:flex;gap:10px;color:var(--accent);align-items:start}.console.captain .captain-access-foot>span{font-size:22px;line-height:1}.console.captain .captain-access-foot p{font-size:9px;letter-spacing:.12em;margin:0;line-height:1.6}.console.captain .captain-access-foot small{display:block;font-size:11px;letter-spacing:0;line-height:1.7;color:var(--muted);margin-top:6px}
+}
 .console.captain[data-starfield=true]:has(#auth:not([hidden])) .captain-window{overflow:auto}
 .console.captain .captain-auth-breadcrumb{display:none}
 .console.captain:has(#auth:not([hidden])) .captain-breadcrumb{display:none}
