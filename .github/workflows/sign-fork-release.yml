@@ -31,6 +31,7 @@ jobs:
           npm run test:coding-connector
           node --jitless --test tools/coding-connector/test/connector.test.mjs tools/coding-connector/test/workspace.test.mjs experimental/runtime-control/test/machine-client.test.mjs
           npm run docs:check
+          npm run test:console-theme
           npm --prefix experimental/updater test
           npm --prefix experimental/runtime-control test
           npm --prefix experimental/runtime-control run test:socket

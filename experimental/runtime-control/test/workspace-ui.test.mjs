@@ -7,10 +7,11 @@ import {CONSOLE_HTML} from '../src/oracle-service.mjs';
 import {admissionConsoleHtml} from '../src/admission-ui.mjs';
 const html=admissionConsoleHtml(CONSOLE_HTML,{activationEnabled:true,workspaceEnabled:true}),script=html.match(/<script>\n([\s\S]*?)<\/script>/)[1];
 const flush=()=>new Promise(r=>setImmediate(r));
-async function harness(t,{configTransform=value=>value,beforeBoot=async()=>{},initialHash='#requests'}={}){
+async function harness(t,{configTransform=value=>value,beforeBoot=async()=>{},initialHash='#requests',theme='standard'}={}){
  const f=await workspaceFixture({realMarkers:false});t.after(()=>f.close());const created=[],downloads=[],urls=new Map(),listeners={},windowListeners={},mediaListeners={},timers=new Map();let timerId=0,signedIn=true,failReads=false,holdRead=null,heldResultResponse=null;
  const element=(tag='div')=>{const n={tag,children:[],attrs:{},dataset:{},listeners:{},value:'',hidden:true,disabled:false,_text:'',get textContent(){return this._text+this.children.map(x=>x.textContent).join('');},set textContent(v){this._text=String(v);this.children=[];},classList:{toggle(){}},setAttribute(k,v){this.attrs[k]=String(v);},addEventListener(k,fn){this.listeners[k]=fn;},append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this._text='';this.children=nodes;},focus(){},remove(){},click(){if(this.tag==='a')downloads.push({name:this.download,url:this.href});else return this.listeners.click?.();},animate(){return {cancel(){}};}};created.push(n);return n;};
  const els=new Map([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,element()]));
+ els.get('console-surface').dataset.consoleTheme=theme;
  els.get('request-purpose').value='sanitized-source-proposal';els.get('request-template').value='custom';els.get('jobs-filter').value='all';
  const document={visibilityState:'visible',body:element('body'),getElementById:id=>{assert(els.has(id),'missing '+id);return els.get(id);},createElement:element,addEventListener:(k,fn)=>{(listeners[k]??=[]).push(fn);}};
  const pref={matches:false,addEventListener:(k,fn)=>mediaListeners[k]=fn},location={hash:initialHash},window={location,history:{pushState(_s,_t,h){location.hash=h;},replaceState(_s,_t,h){location.hash=h;}},matchMedia:()=>pref,addEventListener:(k,fn)=>windowListeners[k]=fn};
@@ -47,6 +48,15 @@ test('v1 UI: ordinary brief, approval, result formatting, exact downloads and lo
  assert.equal(await h.urls.get(answer.url).text(),h.f.output);const exported=JSON.parse(await h.urls.get(handoff.url).text());assert.equal(exported.result.body,h.f.output);assert.equal(exported.provenance.maxOutputTokens,4096);assert.match(await h.urls.get(source.url).text(),/export function statusLabel/);
  assert.equal(h.f.calls,1);
 });
+for(const mode of ['complete','uncertain'])test('route follows saved request and stops on unreadable status: '+mode,async t=>{
+ const h=await harness(t,{theme:'captain'});await h.brief();assert.equal(h.get('console-surface').dataset.routePhase,'review');
+ await h.click('request-approve');assert.equal(h.get('console-surface').dataset.routePhase,'queued');
+ await h.click('nav-overview');assert.notEqual(h.context.workspaceTest.poll,null);
+ h.setFailReads(true);await h.click('request-check');assert.equal(h.get('console-surface').dataset.routePhase,'unknown');
+ h.setFailReads(false);if(mode==='uncertain')h.f.setMode('uncertain');await h.f.dispatcher.runOnce();await h.click('request-check');
+ assert.equal(h.get('console-surface').dataset.routePhase,mode==='complete'?'completed':'uncertain');assert.equal(h.f.calls,1);
+ await h.click('logout');assert.equal(h.get('console-surface').dataset.routePhase,'unknown');assert.doesNotMatch(h.get('route-status').textContent,/Selected request/);
+});
 test('commissioning requires every verified setup check and clears on sign-out without a provider call',async t=>{
  const h=await harness(t);assert.equal(h.get('commissioning').dataset.earned,'true');assert.equal(h.get('commission-title').textContent,'Ensign');assert.equal(h.get('training-progress').value,1);assert.equal(h.get('request-advanced').hidden,true);assert.equal(h.get('request-template-code').disabled,true);assert.equal(h.f.calls,0);
  assert.equal(h.calls.filter(c=>c.url==='/workspace/config').length,1);
@@ -56,6 +66,20 @@ test('commissioning requires every verified setup check and clears on sign-out w
 for(const [acceptedWork,rank] of [[0,'Lieutenant'],[4,'Lieutenant'],[5,'Commander'],[24,'Commander'],[25,'Captain'],[99,'Captain'],[100,'Admiral']])test('earned-work rank boundary '+acceptedWork,async t=>{
  const h=await harness(t,{configTransform:c=>({...c,training:{v:1,hasSavedResult:true,hasReviewedResult:true},progress:{v:1,acceptedWork,atLeast:acceptedWork===100}})});
  assert.equal(h.get('training-rank').textContent,rank);assert.equal(h.get('logo-wrap').dataset.rank,rank.toLowerCase());assert.equal(h.get('request-template-code').hidden,false);assert.equal(h.f.calls,0);
+ const floor=acceptedWork>=25?25:acceptedWork>=5?5:0,ceiling=acceptedWork>=25?100:acceptedWork>=5?25:5;
+ assert.equal(h.get('training-progress').value,acceptedWork===100?1:acceptedWork-floor);
+ assert.equal(h.get('training-progress').max,acceptedWork===100?1:ceiling-floor);
+});
+for(const [n,next,remaining] of [[1,'Commander',4],[4,'Commander',1],[5,'Captain',20],[25,'Admiral',75],[100,null,null],[null,null,null]])test('Captain rank copy separates next rank and remaining results: '+n,async t=>{
+ const h=await harness(t,{theme:'captain',configTransform:c=>({...c,training:{v:1,hasSavedResult:true,hasReviewedResult:true},progress:n===null?null:{v:1,acceptedWork:n,atLeast:n===100}})});
+ assert.equal(h.get('training-remaining').hidden,next===null);
+ if(next){assert.equal(h.get('training-next').textContent,'Next rank: '+next);assert.equal(h.get('training-remaining').textContent,remaining+' more accepted '+(remaining===1?'result':'results')+' to advance');}
+ assert.doesNotMatch(h.get('training-title').textContent,/earned/);await h.click('logout');assert.equal(h.get('training-remaining').hidden,true);assert.equal(h.get('training-remaining').textContent,'');assert.equal(h.f.calls,0);
+});
+test('saved and withdrawn acceptance refresh credit immediately without another invocation',async t=>{
+ const h=await harness(t);await h.brief();await h.click('request-approve');await h.f.dispatcher.runOnce();await h.click('request-check');
+ await h.click('request-accept');assert.match(h.get('training-next').textContent,/1 accepted result/);assert.equal(h.get('training-progress').value,1);
+ await h.click('request-changes');assert.match(h.get('training-next').textContent,/0 accepted results/);assert.equal(h.get('training-progress').value,0);assert.equal(h.get('training-rank').textContent,'Lieutenant');assert.equal(h.f.calls,1);
 });
 for(const progress of [null,{v:1,acceptedWork:101,atLeast:true},{v:1,acceptedWork:-1,atLeast:false},{v:1,acceptedWork:100,atLeast:false}])test('invalid earned work never promotes: '+JSON.stringify(progress),async t=>{
  const h=await harness(t,{configTransform:c=>({...c,training:{v:1,hasSavedResult:true,hasReviewedResult:true},progress})});assert.equal(h.get('training-rank').textContent,'Lieutenant');assert.equal(h.get('training-next').textContent,'Work milestones unavailable.');assert.equal(h.f.calls,0);
@@ -69,7 +93,7 @@ for(const offset of [-60001,6001])test('stale or future setup cannot award commi
 test('training action opens the first result; review earns Lieutenant without another invocation',async t=>{
  const h=await harness(t);await h.brief();await h.click('request-approve');await h.f.dispatcher.runOnce();await h.click('request-refresh');
  assert.equal(h.get('training-rank').textContent,'Ensign');assert.equal(h.get('training-progress').value,2);assert.equal(h.get('request-advanced').hidden,true);
- await h.click('training-action');await flush();await h.click('request-accept');assert.equal(h.get('training-rank').textContent,'Lieutenant');assert.equal(h.get('training-progress').value,3);assert.equal(h.get('request-advanced').hidden,false);assert.equal(h.get('request-template-code').disabled,false);assert.equal(h.get('logo-wrap').dataset.rank,'lieutenant');assert.equal(h.f.calls,1);
+ await h.click('training-action');await flush();await h.click('request-accept');assert.equal(h.get('training-rank').textContent,'Lieutenant');assert.equal(h.get('training-progress').value,1);assert.equal(h.get('training-progress').max,5);assert.equal(h.get('request-advanced').hidden,false);assert.equal(h.get('request-template-code').disabled,false);assert.equal(h.get('logo-wrap').dataset.rank,'lieutenant');assert.equal(h.f.calls,1);
 });
 test('status pages offer a next action that preserves the draft and advances to review then new work',async t=>{
  const h=await harness(t,{initialHash:'#groq'});assert.equal(h.get('next-groq').textContent,'Create request');assert.equal(h.get('next-groq').hidden,false);await h.click('next-groq');assert.equal(h.context.window.location.hash,'#requests');
