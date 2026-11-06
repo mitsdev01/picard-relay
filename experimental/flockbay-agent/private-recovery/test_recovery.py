@@ -35,7 +35,6 @@ class RecoveryTests(unittest.TestCase):
     def test_idle_probe_falls_back_to_control_without_upgrade_check(self):
         with tempfile.TemporaryDirectory() as folder:
             live = pathlib.Path(folder)
-            live.mkdir()
             (live / 'control.mjs').write_text('control')
             status = '{"missions":[{"state":"completed"}]}'
             def fake_run(*args, **kwargs):
