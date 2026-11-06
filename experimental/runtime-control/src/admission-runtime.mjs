@@ -84,7 +84,7 @@ export function prepareAdmissionRuntime({activationEnabled=false,config,env=proc
   adapter.attachStore(admissionStore,{accepting:()=>control.accepting});
   const handler=createAdmissionHandler({activationEnabled:true,store:admissionStore,auth,loadPolicy,binding,origins:config.consoleOrigins,now,currentAvailability:adapter.availability});
   const workspace=createWorkspaceHandler({enabled:config.workspaceEnabled===true,store:admissionStore,auth,loadPolicy,binding,origins:config.consoleOrigins,now,currentAvailability:adapter.availability,authenticateMachine:createMachineAuthenticator(config.machineClientsFile)});
-  return {handler:async(req,res)=>await workspace(req,res)||await handler(req,res),html:admissionConsoleHtml(baseHtml,{activationEnabled:true,workspaceEnabled:config.workspaceEnabled===true}),dispatchStore:{...store,claimNext:input=>adapter.claimNext(input)},close:()=>admissionStore.close()};
+  return {handler:async(req,res)=>await workspace(req,res)||await handler(req,res),html:admissionConsoleHtml(baseHtml,{activationEnabled:true,workspaceEnabled:config.workspaceEnabled===true,theme:'captain'}),dispatchStore:{...store,claimNext:input=>adapter.claimNext(input)},close:()=>admissionStore.close()};
   }catch{admissionStore.close();stop('admission_configuration_invalid');}
  }};
 }

@@ -140,8 +140,10 @@ export function consoleJobsSnapshot(page,now=new Date()){
  const rows=page.rows.map(row=>{if(!row||!/^[a-f0-9]{64}$/.test(row.ref??'')||!states.includes(row.state)||typeof row.resultAvailable!=='boolean'||!JOB_REASON_CODES.includes(row.reasonCode))unavailable();const time=value=>value===null||Number.isSafeInteger(value)&&value>=0&&value<=8640000000000000?value:null;return {ref:row.ref,state:row.state,createdAt:time(row.createdAt),updatedAt:time(row.updatedAt),resultAvailable:row.resultAvailable,reasonCode:row.reasonCode};});
  if(new Set(rows.map(row=>row.ref)).size!==rows.length)unavailable();const result={v:1,rows,nextCursor:page.nextCursor,observedAt:now.toISOString()};if(Buffer.byteLength(JSON.stringify(result))>16384)unavailable();return result;
 }
+// Finite runtime ceiling; theme tests reserve separate upstream-growth headroom.
+export const MAX_CONSOLE_DOCUMENT_BYTES=256*1024;
 export function createConsoleHandler({enabled=false,html='',getSnapshot,getRecentJobs,auth=null,origins=[],updates=createUpdateRequestBridge()}={}){
- if(typeof html!=='string'||Buffer.byteLength(html)>131072)throw Error('console_document_invalid');
+ if(typeof html!=='string'||Buffer.byteLength(html)>MAX_CONSOLE_DOCUMENT_BYTES)throw Error('console_document_invalid');
  const hash=s=>"'sha256-"+createHash('sha256').update(s).digest('base64')+"'";
  const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>hash(m[1]));
  const styles=[...html.matchAll(/<style>([\s\S]*?)<\/style>/g)].map(m=>hash(m[1]));

@@ -21,6 +21,7 @@ jobs:
       - run: npm --prefix experimental/updater test
       - run: npm --prefix experimental/runtime-control test
       - run: npm --prefix experimental/runtime-control run test:socket
+      - run: npm run test:console-theme
       - run: npm run docs:check
       - name: Preserve companion compatibility on every fork PR
         run: |
