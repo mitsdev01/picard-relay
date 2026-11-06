@@ -32,10 +32,18 @@ upstream UI throws instead of silently producing a partial theme. This is a
 bounded contract, not a guarantee against every possible upstream change.
 
 `npm run test:console-theme` checks generated output, structural compatibility,
-unchanged application scripts and IDs, and the document-size boundary. Both fork
+preserved application IDs and scripts apart from two explicit authentication
+presentation hooks, and the document-size boundary. Both fork
 PR and publication checks run it. Browser validation remains required after an
 upstream merge: five views, desktop/narrow sizes, auth and unknown states, drafts,
 five-click gesture, keyboard access, motion preferences and console errors.
+
+Captain opens the doors after login and authenticated status validation, then
+fades in the center controls. Returning to authentication (including sign-out)
+closes the doors and restores the login panel. Private state is cleared before
+the closing animation; session revocation is never delayed for presentation.
+The standard theme retains its existing behavior. Exact compiler anchors and
+regression tests guard both presentation hooks against upstream changes.
 
 The theme uses `workspaceConsoleHtml(base, {theme: 'captain'})`. The composition
 API defaults to `standard` for upstream compatibility; this fork's enrolled
