@@ -4,7 +4,13 @@
   "workspaces": [
     {
       "id": "easyjob",
-      "root": "D:\\src\\EasyJobCloud-v2",
+      "root": "C:\\src\\example-easyjob-checkout",
+      "allowApply": false,
+      "testCommands": []
+    },
+    {
+      "id": "picard-relay",
+      "root": "C:\\src\\example-picard-checkout",
       "allowApply": false,
       "testCommands": []
     }

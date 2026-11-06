@@ -131,7 +131,49 @@ test('MCP exposes optional workspace tools only with enrollment and rejects call
  const calls=[{jsonrpc:'2.0',id:1,method:'tools/list'},{jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'picard_workspaces',arguments:{}}},{jsonrpc:'2.0',id:3,method:'tools/call',params:{name:'picard_workspace_apply',arguments:{workspaceId:'easyjob',taskId:'bad',command:'calc.exe'}}}];
  const result=spawnSync(process.execPath,[fileURLToPath(new URL('../server.mjs',import.meta.url))],{input:calls.map(x=>JSON.stringify(x)).join('\n')+'\n',encoding:'utf8',env:{...process.env,PICARD_CODING_CONFIG:config,PICARD_WORKSPACES_FILE:f.file},timeout:5000});
  assert.equal(result.status,0,result.stderr);const messages=result.stdout.trim().split('\n').map(x=>JSON.parse(x));
- assert.equal(messages.find(x=>x.id===1).result.tools.length,12);assert.equal(JSON.parse(messages.find(x=>x.id===2).result.content[0].text).workspaces[0].root,f.root);assert.equal(messages.find(x=>x.id===3).result.isError,true);assert.ok(!result.stdout.includes('Q'.repeat(43)));
+ assert.equal(messages.find(x=>x.id===1).result.tools.length,13);assert.equal(JSON.parse(messages.find(x=>x.id===2).result.content[0].text).workspaces[0].root,f.root);assert.equal(messages.find(x=>x.id===3).result.isError,true);assert.ok(!result.stdout.includes('Q'.repeat(43)));
+});
+function dualFixture(t,options={}) {
+ const base=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'picard-trusted-'))),rootA=path.join(base,'projectA'),rootB=path.join(base,'projectB'),stateDir=path.join(base,'private');
+ fs.mkdirSync(rootA);fs.mkdirSync(rootB);fs.mkdirSync(stateDir,{mode:0o700});
+ fs.writeFileSync(path.join(rootA,'badge.js'),'export const label = "New audit";\n');
+ fs.writeFileSync(path.join(rootB,'other.js'),'export const other = 1;\n');
+ const file=path.join(base,'workspaces.json'),unit={id:'unit',executable:process.execPath,args:['-e','process.exit(0)'],timeoutMs:1000};
+ const config={v:1,stateDir,workspaces:[{id:'easyjob',root:rootA,allowApply:true,testCommands:[unit]},{id:'picard',root:rootB,allowApply:true,testCommands:[unit]}]};
+ fs.writeFileSync(file,JSON.stringify(config),{mode:0o600});let remoteInput,body,submitCalls=0;
+ const client={prepare:async input=>{remoteInput=input;return {requestId:input.requestId,truncated:false};},submit:async()=>{submitCalls++;return {state:'queued',submission:'sent_once'};},result:async()=>({state:'completed',resultAvailable:true,truncated:false,result:{body,sha256:sha(body)}})};
+ let runFinish=null;
+ const agent=createWorkspaceTasks({registry:()=>loadRegistry(file),makeClient:()=>client,runTest:options.runTest??(async()=>({passed:true,exitCode:0,timeout:false,error:null})),scheduleFinish:fn=>{runFinish=fn;}});
+ t.after(()=>fs.rmSync(base,{recursive:true,force:true}));
+ return {base,rootA,rootB,stateDir,file,agent,client,get submitCalls(){return submitCalls;},runScheduledFinish:async()=>{assert.ok(runFinish,'finish_not_scheduled');return runFinish();},set body(value){body=typeof value==='string'?value:JSON.stringify(value);}};
+}
+test('handoff rejects session root mismatch before submit',async t=>{
+ const f=dualFixture(t);
+ await assert.rejects(f.agent.handoff({workspaceId:'easyjob',sessionRoot:f.rootB,title:'Try cross-root',requestText:'Change nothing.',paths:['badge.js']}),e=>e.code==='workspace_session_mismatch');
+ assert.equal(f.submitCalls,0);assert.match(fs.readFileSync(path.join(f.rootA,'badge.js'),'utf8'),/New audit/);
+});
+test('handoff rejects ambiguous discover scope before submit',async t=>{
+ const f=fixture(t);
+ for(let i=0;i<9;i++)fs.writeFileSync(path.join(f.root,`file${i}.js`),'export const needle = 1;\n');
+ await assert.rejects(f.agent.handoff({workspaceId:'easyjob',sessionRoot:f.root,title:'Wide search',requestText:'Change needle.',query:'needle'}),e=>e.code==='scope_ambiguous');
+ assert.equal(f.counts.submitCalls,0);
+});
+test('handoff submits once then finish applies staged edits',async t=>{
+ const f=dualFixture(t);
+ f.body={v:1,edits:[{path:'badge.js',beforeSha256:sha(fs.readFileSync(path.join(f.rootA,'badge.js'))),search:'"New audit"',replace:'"1 new audit"'}]};
+ const started=await f.agent.handoff({workspaceId:'easyjob',sessionRoot:f.rootA,title:'Count badge',requestText:'Show one new audit.',paths:['badge.js']});
+ assert.equal(started.state,'submitted');assert.equal(f.submitCalls,1);
+ const finished=await f.runScheduledFinish();
+ assert.equal(finished.state,'passed');assert.match(fs.readFileSync(path.join(f.rootA,'badge.js'),'utf8'),/1 new audit/);
+ assert.equal(fs.readFileSync(path.join(f.rootB,'other.js'),'utf8'),'export const other = 1;\n');
+});
+test('handoff finish stops on invalid proposal without resubmitting',async t=>{
+ const f=dualFixture(t);
+ f.body='[Groq / openai/gpt-oss-20b]\nnot json';
+ const started=await f.agent.handoff({workspaceId:'easyjob',sessionRoot:f.rootA,title:'Bad answer',requestText:'Try anyway.',paths:['badge.js']});
+ assert.equal(started.state,'submitted');assert.equal(f.submitCalls,1);
+ const finished=await f.runScheduledFinish();
+ assert.equal(finished.state,'submitted');assert.equal(f.submitCalls,1);assert.match(fs.readFileSync(path.join(f.rootA,'badge.js'),'utf8'),/New audit/);
 });
 test('changed enrollment refuses stale tasks and readonly context changes block clean rollback claims',async t=>{
  const f=fixture(t),args=await staged(f);f.config.workspaces[0].allowApply=false;fs.writeFileSync(f.file,JSON.stringify(f.config));await assert.rejects(f.agent.apply(args),e=>e.code==='workspace_enrollment_changed');assert.match(read(f),/New audit/);

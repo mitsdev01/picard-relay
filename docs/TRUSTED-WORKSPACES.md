@@ -60,6 +60,25 @@ existing `picard-coding` MCP server's environment, alongside
 Without this environment variable, only the original four proposal tools appear.
 An invalid enrollment never falls back to editing the relay repository.
 
+Use one Cursor window per repository. Open EasyJob in one window and Picard in
+another. A handoff always passes that window's open folder as `sessionRoot` and
+the enrolled workspace id for that same checkout. The connector rejects a
+mismatch before any provider call, so one window cannot edit another repository.
+
+Adding another repository is a registry edit only: copy
+[workspaces.example.json](../tools/coding-connector/workspaces.example.json),
+add a new `id`, the absolute `root`, that repo's reviewed `testCommands`, and
+keep `allowApply` false until those commands have been validated.
+
+## Workspace handoff
+
+`picard_workspace_handoff` is the low-token path for one authorized task in the
+open window. It requires `allowApply`, a matching `sessionRoot`, and either
+explicit `paths` or one `query` that discover resolves to 1-8 files without
+hitting the search limit. It prepares and submits once, returns the `taskId`
+immediately, then finishes collect and apply in the connector process. Poll
+`picard_workspace_status` until the state is terminal. Do not submit again.
+
 ## One finite coding task
 
 1. **Discover:** `picard_workspaces`, then `picard_workspace_discover` by symbols,
