@@ -78,7 +78,10 @@ An invalid enrollment never falls back to editing the relay repository.
 4. **Collect:** `picard_workspace_collect` reads the same saved result until it is
    available. It validates the result digest, file scope, base hashes and exact,
    unique edit anchors inside the supplied excerpts. One leading `[Groq / model]`
-   attribution line is removed before the body is parsed as JSON. Unknown files,
+   attribution line is removed before the body is parsed as JSON. If that parsed
+   search text is absent from the file and decoding one layer of visible `\r`,
+   `\n`, and `\t` sequences produces a unique anchor inside the excerpt, the
+   decoded anchor is staged. Unknown files,
    invented types in unsupplied files, malformed output and insufficient context
    are rejected.
    Semantic correctness still requires review and meaningful tests.

@@ -62,6 +62,23 @@ test('one leading relay attribution line is removed before JSON parsing',async t
  prose.body='[Groq / openai/gpt-oss-20b]\nHere is the edit.\n'+JSON.stringify(edit);
  await assert.rejects(prose.agent.collect(proseArgs),e=>e.code==='proposal_must_be_json');
 });
+test('visible backslash-r backslash-n anchors match CRLF source once',async t=>{
+ const source="/**\r\n */\r\nexport const VERSION = '2.15.1387'\r\n";
+ const f=fixture(t);fs.writeFileSync(path.join(f.root,'badge.js'),source);
+ const hash=sha(fs.readFileSync(path.join(f.root,'badge.js'))),args=await prepared(f);await f.agent.submit(args);
+ f.body={v:1,edits:[{path:'badge.js',beforeSha256:hash,search:" */\\r\\nexport const VERSION = '2.15.1387'",replace:" */\\r\\n// Picard workspace apply verified.\\r\\nexport const VERSION = '2.15.1387'"}]};
+ const collected=await f.agent.collect(args);
+ assert.equal(collected.state,'staged');
+ assert.equal(collected.edits[0].search," */\r\nexport const VERSION = '2.15.1387'");
+ assert.equal(collected.edits[0].replace," */\r\n// Picard workspace apply verified.\r\nexport const VERSION = '2.15.1387'");
+ const saved=JSON.parse(fs.readFileSync(path.join(f.stateDir,'easyjob',args.taskId+'.json'),'utf8'));
+ assert.equal(Buffer.from(saved.files[0].after,'base64').toString('utf8'),"/**\r\n */\r\n// Picard workspace apply verified.\r\nexport const VERSION = '2.15.1387'\r\n");
+ const exact=fixture(t);fs.writeFileSync(path.join(exact.root,'badge.js'),source);
+ const exactHash=sha(fs.readFileSync(path.join(exact.root,'badge.js'))),exactArgs=await prepared(exact);await exact.agent.submit(exactArgs);
+ exact.body={v:1,edits:[{path:'badge.js',beforeSha256:exactHash,search:" */\r\nexport const VERSION = '2.15.1387'",replace:" */\r\n// kept.\r\nexport const VERSION = '2.15.1387'"}]};
+ const exactCollected=await exact.agent.collect(exactArgs);
+ assert.equal(exactCollected.edits[0].replace," */\r\n// kept.\r\nexport const VERSION = '2.15.1387'");
+});
 test('only exact unique anchors within selected excerpts may change',async t=>{
  const f=fixture(t);fs.writeFileSync(path.join(f.root,'badge.js'),'first\nsecond\nthird\n');const args=await prepared(f,[{path:'badge.js',writable:true,startLine:2,endLine:2}]);assert.ok(!f.input.note.includes('third'));
  await f.agent.submit(args);f.body={v:1,edits:[{path:'badge.js',beforeSha256:sha(fs.readFileSync(path.join(f.root,'badge.js'))),search:'third',replace:'changed'}]};await assert.rejects(f.agent.collect(args),e=>e.code==='edit_anchor_not_unique_or_not_in_context');

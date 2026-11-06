@@ -140,7 +140,7 @@ test('MCP initialization, discovery and argument validation stay on stdout',asyn
  const send=async message=>{const response=ready();child.stdin.write(JSON.stringify(message)+'\n');return response;};
  try{
   const init=await send({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-03-26',capabilities:{},clientInfo:{name:'synthetic',version:'0'}}});
-  assert.equal(init.result.serverInfo.name,'picard-coding');assert.equal(init.result.serverInfo.version,'1.1.1');assert.deepEqual(init.result.capabilities.tools,{listChanged:false});
+  assert.equal(init.result.serverInfo.name,'picard-coding');assert.equal(init.result.serverInfo.version,'1.1.2');assert.deepEqual(init.result.capabilities.tools,{listChanged:false});
   child.stdin.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/initialized'})+'\n');
   const listed=await send({jsonrpc:'2.0',id:2,method:'tools/list'});
   assert.deepEqual(listed.result.tools.map(tool=>tool.name),['picard_prepare_coding_request','picard_submit_coding_request','picard_coding_request_status','picard_coding_request_result']);
