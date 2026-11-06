@@ -37,10 +37,11 @@ PR and publication checks run it. Browser validation remains required after an
 upstream merge: five views, desktop/narrow sizes, auth and unknown states, drafts,
 five-click gesture, keyboard access, motion preferences and console errors.
 
-The theme uses `workspaceConsoleHtml(base, {theme: 'captain'})`. The composition
-API defaults to `standard` for upstream compatibility; this fork's enrolled
-workspace runtime explicitly passes `captain`. Legacy admission and disabled
-workspace paths retain their existing presentation. Activation travels inside
+The theme is applied through `workspaceConsoleHtml(base, {theme: 'captain'})`.
+`admissionConsoleHtml` accepts the same `theme` option and delegates to that
+function when `workspaceEnabled` is true, including `npm run preview:v1` and
+this fork's enrolled workspace runtime (`theme: 'captain'`). Legacy admission
+and disabled workspace paths retain their existing presentation. Activation travels inside
 the reviewed signed release, not through host-side injection. Merging source
 does not itself sign, publish or install a release.
 
