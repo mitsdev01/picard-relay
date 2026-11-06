@@ -1,10 +1,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
-import {CONSOLE_HTML,createConsoleHandler,MAX_CONSOLE_DOCUMENT_BYTES} from '../../experimental/runtime-control/src/oracle-service.mjs';
-import {workspaceConsoleHtml} from '../../experimental/runtime-control/src/admission-ui.mjs';
-import {CAPTAIN_LOGIN_REVEAL,CAPTAIN_AUTH_CLOSE} from './captain.mjs';
 import {runInNewContext} from 'node:vm';
+import {CONSOLE_HTML,createConsoleHandler,MAX_CONSOLE_DOCUMENT_BYTES} from '../../experimental/runtime-control/src/oracle-service.mjs';
+import {admissionConsoleHtml,workspaceConsoleHtml} from '../../experimental/runtime-control/src/admission-ui.mjs';
+import {CAPTAIN_LOGIN_REVEAL,CAPTAIN_AUTH_CLOSE} from './captain.mjs';
 const standard=workspaceConsoleHtml(CONSOLE_HTML),captain=workspaceConsoleHtml(CONSOLE_HTML,{theme:'captain'});
 test('generated theme is current and both documents fit the bounded security handler',()=>{
  execFileSync(process.execPath,['tools/console-theme/build.mjs','--check']);
@@ -18,6 +18,10 @@ test('Captain theme preserves interactive IDs and application script except expl
  const ids=h=>[...h.matchAll(/id="([^"]+)"/g)].map(x=>x[1]).sort();assert.deepEqual(ids(captain),ids(standard));
  const scripts=h=>[...h.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(x=>x[1]);assert.equal(captain.split(CAPTAIN_LOGIN_REVEAL).length,2);assert.equal(captain.split(CAPTAIN_AUTH_CLOSE).length,2);assert.deepEqual(scripts(captain.replace(CAPTAIN_LOGIN_REVEAL,'').replace(CAPTAIN_AUTH_CLOSE,'')),scripts(standard));
  assert.match(captain,/You have the conn\./);assert.match(captain,/captain-doors/);assert.doesNotMatch(standard,/class="console captain"/);
+});
+test('admissionConsoleHtml forwards theme when the workspace view is enabled',()=>{
+ const viaAdmission=admissionConsoleHtml(CONSOLE_HTML,{activationEnabled:true,workspaceEnabled:true,theme:'captain'});
+ assert.equal(viaAdmission,workspaceConsoleHtml(CONSOLE_HTML,{theme:'captain'}));
 });
 test('returning to authentication closes doors after clearing private state',()=>{
  const surface={dataset:{starfield:'true'}},badge={setAttribute(name,value){this[name]=value;}},context={starfield:true,hudExpanded:true,starClicks:4,calls:0,$:id=>id==='console-surface'?surface:badge};

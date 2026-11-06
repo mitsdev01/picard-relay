@@ -49,11 +49,31 @@ def missing_files(snapshot, live):
             result.append((source, target))
     return result
 
-def run(*args, check=True):
-    p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=45)
+def run(*args, check=True, input=None):
+    p = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=45, input=input)
     if check and p.returncode:
         raise RuntimeError('command_failed:' + pathlib.Path(args[0]).name)
     return p
+
+def companion_require_idle():
+    upgrade = LIVE / 'upgrade-check.mjs'
+    if upgrade.is_file():
+        probe = run('runuser', '-u', 'picard-relay', '--', '/usr/local/bin/node', str(upgrade), '--require-idle', check=False)
+        return probe.returncode == 0
+    control = LIVE / 'control.mjs'
+    if not control.is_file():
+        return False
+    probe = run('runuser', '-u', 'picard-relay', '--', '/usr/local/bin/node', str(control), check=False, input='{"action":"status"}')
+    if probe.returncode:
+        return False
+    try:
+        status = json.loads(probe.stdout)
+    except json.JSONDecodeError:
+        return False
+    missions = status.get('missions')
+    if not isinstance(missions, list):
+        return False
+    return not any(isinstance(m, dict) and m.get('state') == 'running' for m in missions)
 
 def reconcile():
     # These are deliberately NOT in the recovery payload.
@@ -71,10 +91,8 @@ def reconcile():
     planned = route_plan(current, (BASE / 'routes.txt').read_text(), configured_site())
     active = run('systemctl', 'is-active', '--quiet', 'picard-flockbay-agent', check=False).returncode == 0
     # If healthy, only inspect. A busy mission defers all repairs.
-    if active:
-        probe = run('runuser', '-u', 'picard-relay', '--', '/usr/local/bin/node', str(LIVE / 'upgrade-check.mjs'), '--require-idle', check=False)
-        if probe.returncode:
-            raise ValueError('busy_or_unreadable_companion_repair_deferred')
+    if active and not companion_require_idle():
+        raise ValueError('busy_or_unreadable_companion_repair_deferred')
     if planned != current:
         candidate = BASE / 'Caddyfile.candidate'
         candidate.write_text(planned)

@@ -47,8 +47,27 @@ export function runEnrolledTest(command,root,logFile,onPid=()=>{}) {
   child.once('error',()=>finish(null,'test_start_failed'));child.once('close',code=>finish(code));
  });
 }
-export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTest}) {
+function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
+export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTest,scheduleFinish=fn=>{setImmediate(()=>{void fn().catch(()=>{});});}}) {
  function settings(id) {const r=registry(),w=r.workspaces.find(x=>x.id===id);requireThat(w,'workspace_not_enrolled');return {r,w};}
+ function assertSession(w,sessionRoot){requireThat(typeof sessionRoot==='string'&&sessionRoot.trim(),'session_root_invalid');requireThat(directory(sessionRoot.trim())===w.root,'workspace_session_mismatch');}
+ function fileEntriesFromSpecs(w,specs){
+  const seen=new Set();
+  return specs.map(f=>{
+   requireThat(f&&typeof f.writable==='boolean'&&Object.keys(f).every(k=>['path','writable','create','startLine','endLine'].includes(k))&&!seen.has(f.path.toLowerCase()),'file_scope_invalid');seen.add(f.path.toLowerCase());
+   const source=readSource(w.root,f.path,{missing:f.create===true});
+   if(f.create===true)requireThat(source===null&&f.writable&&!f.startLine&&!f.endLine,'new_file_must_be_absent');else requireThat(source!==null,'file_missing');
+   let excerpt='',start=0,end=0;
+   if(source){const lines=source.text.split('\n'),a=f.startLine??1,b=f.endLine??lines.length;requireThat(Number.isSafeInteger(a)&&Number.isSafeInteger(b)&&a>=1&&b>=a&&b<=lines.length,'line_range_invalid');start=lines.slice(0,a-1).join('\n').length+(a>1?1:0);excerpt=lines.slice(a-1,b).join('\n');end=start+excerpt.length;}
+   return {path:f.path,writable:f.writable,before:source?.base64??null,beforeSha256:source?.sha256??null,mode:source?.mode??0o644,excerpt,start,end};
+  });
+ }
+ function assertHandoffContext(title,requestText,files){
+  requireThat(files.some(f=>f.writable),'writable_file_required');
+  const context=files.map(f=>JSON.stringify({path:f.path,sha256:f.beforeSha256,writable:f.writable,...(f.before===null?{newFile:true}:{excerpt:f.excerpt})})).join('\n');
+  const fullRequest=requestText+'\n\n'+outputContract;
+  requireThat(context.length<=4000&&fullRequest.length<=4000&&Buffer.byteLength(JSON.stringify({request:fullRequest,context:{title,nextAction:'',latestFinding:context}}))<=12000,'context_too_large_select_smaller_excerpts');
+ }
  function store(r,w){const dir=path.join(r.stateDir,w.id);if(!fs.existsSync(dir))fs.mkdirSync(dir,{mode:0o700});requireThat(directory(dir)===dir,'state_link_refused');return dir;}
  function taskFile(dir,id){requireThat(UUID.test(id??''),'task_id_invalid');return path.join(dir,id+'.json');}
  function save(dir,t){durable(taskFile(dir,t.id),JSON.stringify(t));return t;}
@@ -100,7 +119,7 @@ export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTes
    t.testInvocation=null;save(dir,t);if(!result.passed)return false;
   }return true;
  }
- return {
+ const agent={
   list(){const r=registry();return {workspaces:r.workspaces.map(w=>{const lock=path.join(store(r,w),'active');return {id:w.id,root:w.root,allowApply:w.allowApply,tests:w.testCommands.map(c=>c.id),activeTaskId:fs.existsSync(lock)?fs.readFileSync(lock,'utf8'):null};}),executionBoundary:'Enrolled local commands run with your account privileges, not in a sandbox.'};},
   discover({workspaceId,query}) {
    const {w}=settings(workspaceId);requireThat(typeof query==='string'&&query.length>=2&&query.length<=120,'query_invalid');
@@ -114,18 +133,10 @@ export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTes
    else {
     requireThat(typeof args.title==='string'&&args.title.length<=200&&args.title.trim()&&typeof args.requestText==='string'&&args.requestText.trim()&&args.requestText.length<=2800&&Array.isArray(args.files)&&args.files.length>0&&args.files.length<=8,'task_input_invalid');
     requireThat(!fs.existsSync(path.join(dir,'active')),'workspace_task_active');
-    const seen=new Set(),files=args.files.map(f=>{
-     requireThat(f&&typeof f.writable==='boolean'&&Object.keys(f).every(k=>['path','writable','create','startLine','endLine'].includes(k))&&!seen.has(f.path.toLowerCase()),'file_scope_invalid');seen.add(f.path.toLowerCase());
-     const source=readSource(w.root,f.path,{missing:f.create===true});
-     if(f.create===true)requireThat(source===null&&f.writable&&!f.startLine&&!f.endLine,'new_file_must_be_absent');else requireThat(source!==null,'file_missing');
-     let excerpt='',start=0,end=0;
-     if(source){const lines=source.text.split('\n'),a=f.startLine??1,b=f.endLine??lines.length;requireThat(Number.isSafeInteger(a)&&Number.isSafeInteger(b)&&a>=1&&b>=a&&b<=lines.length,'line_range_invalid');start=lines.slice(0,a-1).join('\n').length+(a>1?1:0);excerpt=lines.slice(a-1,b).join('\n');end=start+excerpt.length;}
-     return {path:f.path,writable:f.writable,before:source?.base64??null,beforeSha256:source?.sha256??null,mode:source?.mode??0o644,excerpt,start,end};
-    });
-    requireThat(files.some(f=>f.writable),'writable_file_required');
+    const files=fileEntriesFromSpecs(w,args.files);
+    assertHandoffContext(args.title.trim(),args.requestText.trim(),files);
     const context=files.map(f=>JSON.stringify({path:f.path,sha256:f.beforeSha256,writable:f.writable,...(f.before===null?{newFile:true}:{excerpt:f.excerpt})})).join('\n');
     const requestText=args.requestText+'\n\n'+outputContract;
-    requireThat(context.length<=4000&&requestText.length<=4000&&Buffer.byteLength(JSON.stringify({request:requestText,context:{title:args.title,nextAction:'',latestFinding:context}}))<=12000,'context_too_large_select_smaller_excerpts');
     t={v:1,id:randomUUID(),workspaceId,root:w.root,fingerprint:r.fingerprint,state:'preparing',files,input:{title:args.title,requestText,note:context,paths:[]},tests:[]};
     durable(path.join(dir,'active'),t.id,{exclusive:true});save(dir,t);
    }
@@ -192,6 +203,47 @@ export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTes
     // No applied edits. Cancelling never deletes the relay request or renews it.
     t.state='cancelled';save(dir,t);unlock(dir,t);return view(t);
    });
+  },
+  async finishHandoff({workspaceId,taskId}) {
+   for(let attempt=0;attempt<240;attempt++){
+    const current=agent.status({workspaceId,taskId});
+    if(terminal.has(current.state))return current;
+    if(current.state==='staged')return agent.apply({workspaceId,taskId});
+    try{
+     const collected=await agent.collect({workspaceId,taskId});
+     if(collected.state==='staged')return agent.apply({workspaceId,taskId});
+     if(!collected.remote?.resultAvailable)await sleep(250);
+    }catch(e){
+     if(e instanceof WorkspaceError)return agent.status({workspaceId,taskId});
+     throw e;
+    }
+   }
+   return agent.status({workspaceId,taskId});
+  },
+  async handoff(args) {
+   const {workspaceId,sessionRoot,title,requestText}=args;
+   const {w}=settings(workspaceId);
+   assertSession(w,sessionRoot);
+   requireThat(w.allowApply&&w.testCommands.length,'local_execution_not_enrolled');
+   requireThat(typeof title==='string'&&title.length<=200&&title.trim()&&typeof requestText==='string'&&requestText.trim()&&requestText.length<=2800,'task_input_invalid');
+   const hasPaths=Array.isArray(args.paths),hasQuery=typeof args.query==='string'&&args.query.length>=2&&args.query.length<=120;
+   requireThat(hasPaths!==hasQuery,'handoff_scope_required');
+   let specs;
+   if(hasPaths){
+    requireThat(args.paths.length>=1&&args.paths.length<=8&&args.paths.every(p=>typeof p==='string'&&p.length>0&&p.length<=240),'handoff_paths_invalid');
+    specs=args.paths.map(p=>({path:p,writable:true}));
+   }else{
+    const found=agent.discover({workspaceId,query:args.query});
+    requireThat(!found.limited&&found.files.length>=1&&found.files.length<=8,'scope_ambiguous');
+    specs=found.files.map(f=>({path:f.path,writable:true}));
+   }
+   const files=fileEntriesFromSpecs(w,specs);
+   assertHandoffContext(title.trim(),requestText.trim(),files);
+   const prepared=await agent.prepare({workspaceId,title:title.trim(),requestText:requestText.trim(),files:specs});
+   const submitted=await agent.submit({workspaceId,taskId:prepared.taskId});
+   scheduleFinish(async()=>agent.finishHandoff({workspaceId,taskId:prepared.taskId}));
+   return {...view(load(workspaceId,prepared.taskId).t),submission:submitted.remote?.submission??'sent_once',finishScheduled:true,instruction:'Poll picard_workspace_status for this taskId until the state is terminal. No second submit.'};
   }
  };
+ return agent;
 }

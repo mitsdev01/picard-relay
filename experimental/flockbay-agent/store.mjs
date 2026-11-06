@@ -3,6 +3,13 @@ import {maintenanceStore} from './maintenance.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHash,randomUUID} from 'node:crypto';
 export const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+function canonicalMissionValue(value){
+ if(value===null||typeof value!=='object')return value;
+ if(Array.isArray(value))return value.map(canonicalMissionValue);
+ return Object.keys(value).sort().reduce((out,key)=>{out[key]=canonicalMissionValue(value[key]);return out;},{});
+}
+function missionInputKey(input){return JSON.stringify(canonicalMissionValue(input));}
+function storedMissionInputKey(raw){return missionInputKey(JSON.parse(raw));}
 export function openAgentStore(path) {
   const db=new DatabaseSync(path);
   db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;
@@ -18,7 +25,7 @@ export function openAgentStore(path) {
     recover(){db.exec("UPDATE missions SET state='uncertain',result='Server restarted during a mission. Do not replay; inspect recorded calls and the game.' WHERE state='running'; UPDATE commands SET state='uncertain' WHERE state IN ('queued','sent');");},
     create(input){
       db.exec('BEGIN IMMEDIATE');try{
-      const existing=get(input.id);if(existing){if(existing.input!==JSON.stringify(input))throw Error('request_identity_conflict');db.exec('COMMIT');return existing;}
+      const existing=get(input.id);if(existing){if(storedMissionInputKey(existing.input)!==missionInputKey(input))throw Error('request_identity_conflict');db.exec('COMMIT');return existing;}
       maintenance.assertOpen();
       if(active())throw Error('mission_already_running');
       if(db.prepare('SELECT COUNT(*) n FROM missions').get().n>=1000)throw Error('history_full');

@@ -1,7 +1,7 @@
 import os, pathlib, tempfile, unittest
 import subprocess
 from unittest.mock import patch
-from reconcile import route_plan, missing_files
+from reconcile import route_plan, missing_files, companion_require_idle
 import reconcile as recovery
 
 class RecoveryTests(unittest.TestCase):
@@ -32,6 +32,24 @@ class RecoveryTests(unittest.TestCase):
     def test_host_command_works_on_host_python(self):
         from reconcile import run
         self.assertEqual(run('/usr/bin/true').returncode, 0)
+    def test_idle_probe_falls_back_to_control_without_upgrade_check(self):
+        with tempfile.TemporaryDirectory() as folder:
+            live = pathlib.Path(folder)
+            (live / 'control.mjs').write_text('control')
+            status = '{"missions":[{"state":"completed"}]}'
+            def fake_run(*args, **kwargs):
+                if args[0] == 'runuser':
+                    return subprocess.CompletedProcess(args, 0, status, '')
+                return subprocess.CompletedProcess(args, 0, '', '')
+            with patch.object(recovery, 'LIVE', live), patch.object(recovery, 'run', fake_run):
+                self.assertTrue(companion_require_idle())
+            busy = '{"missions":[{"state":"running"}]}'
+            def busy_run(*args, **kwargs):
+                if args[0] == 'runuser':
+                    return subprocess.CompletedProcess(args, 0, busy, '')
+                return subprocess.CompletedProcess(args, 0, '', '')
+            with patch.object(recovery, 'LIVE', live), patch.object(recovery, 'run', busy_run):
+                self.assertFalse(companion_require_idle())
     def test_symlink_target_refused(self):
         with tempfile.TemporaryDirectory() as folder:
             base = pathlib.Path(folder)

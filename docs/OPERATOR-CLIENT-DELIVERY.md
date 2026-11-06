@@ -74,7 +74,7 @@ private environment. Do not commit the key path or destination.
 
 ```powershell
 Get-Content -LiteralPath .\install-manual-client-f3b472d.py -Raw |
-  & ssh.exe -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=10 -i $env:PICARD_OPERATOR_SSH_IDENTITY $env:PICARD_OPERATOR_SSH_DESTINATION 'sudo -n /usr/bin/python3 -'
+  & ssh.exe -o StrictHostKeyChecking=yes -o BatchMode=yes -o ConnectTimeout=10 -i "$env:PICARD_OPERATOR_SSH_IDENTITY" "$env:PICARD_OPERATOR_SSH_DESTINATION" 'sudo -n /usr/bin/python3 -'
 ```
 
 Installation does not authorize using prepare/submit/result. Each real request
