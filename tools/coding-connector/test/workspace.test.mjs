@@ -50,6 +50,18 @@ test('rejects invented files, read-only files, wrong hashes and ambiguous anchor
   await assert.rejects(f.agent.collect(args));assert.match(read(f),/New audit/);
  }
 });
+test('one leading relay attribution line is removed before JSON parsing',async t=>{
+ const f=fixture(t),args=await prepared(f);await f.agent.submit(args);
+ const edit={v:1,edits:[{path:'badge.js',beforeSha256:sha(fs.readFileSync(path.join(f.root,'badge.js'))),search:'"New audit"',replace:'"1 new audit"'}]};
+ f.body='[Groq / openai/gpt-oss-20b]\n'+JSON.stringify(edit);
+ const collected=await f.agent.collect(args);assert.equal(collected.state,'staged');assert.equal(collected.edits[0].replace,'"1 new audit"');
+ const other=fixture(t),otherArgs=await prepared(other);await other.agent.submit(otherArgs);
+ other.body='[Groq / openai/gpt-oss-20b]\n[Incomplete response: the output limit was reached. This is a partial answer.]\n{"v":1';
+ await assert.rejects(other.agent.collect(otherArgs),e=>e.code==='proposal_must_be_json');
+ const prose=fixture(t),proseArgs=await prepared(prose);await prose.agent.submit(proseArgs);
+ prose.body='[Groq / openai/gpt-oss-20b]\nHere is the edit.\n'+JSON.stringify(edit);
+ await assert.rejects(prose.agent.collect(proseArgs),e=>e.code==='proposal_must_be_json');
+});
 test('only exact unique anchors within selected excerpts may change',async t=>{
  const f=fixture(t);fs.writeFileSync(path.join(f.root,'badge.js'),'first\nsecond\nthird\n');const args=await prepared(f,[{path:'badge.js',writable:true,startLine:2,endLine:2}]);assert.ok(!f.input.note.includes('third'));
  await f.agent.submit(args);f.body={v:1,edits:[{path:'badge.js',beforeSha256:sha(fs.readFileSync(path.join(f.root,'badge.js'))),search:'third',replace:'changed'}]};await assert.rejects(f.agent.collect(args),e=>e.code==='edit_anchor_not_unique_or_not_in_context');

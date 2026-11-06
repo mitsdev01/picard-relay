@@ -2,7 +2,7 @@
 
 Local stdio MCP connector for this laptop. It prepares one Picard workspace request, submits that exact request when asked, and reads the saved proposal. Picard does not execute the proposal. Cursor remains responsible for editing files and running tests after review.
 
-Connector version: `1.1.0`.
+Connector version: `1.1.1`.
 
 The fork also preserves the separate Flockbay companion and update gates. For
 explicit workspace selection, backup/apply/test/rollback, see
@@ -32,7 +32,7 @@ Cursor starts the server from an untracked `.cursor/mcp.json`. Copy `.cursor/mcp
 - Arguments: `tools/coding-connector/server.mjs` in this checkout
 - Config file: `%USERPROFILE%\.picard\coding-client.json`
 
-Reload the Cursor window after changing that file. The server writes `picard-coding-connector 1.1.0 ready` to stderr. Stdout is only MCP JSON.
+Reload the Cursor window after changing that file. The server writes `picard-coding-connector 1.1.1 ready` to stderr. Stdout is only MCP JSON.
 
 The private config contains the origin, the raw token, `workspaceRoot`, and `journalDir`. The example shape is `tools/coding-connector/coding-client.example.json`. Do not commit the real file.
 

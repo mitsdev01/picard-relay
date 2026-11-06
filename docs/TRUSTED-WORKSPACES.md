@@ -77,8 +77,10 @@ An invalid enrollment never falls back to editing the relay repository.
    The request is grounded in the selected excerpts and requires structured JSON.
 4. **Collect:** `picard_workspace_collect` reads the same saved result until it is
    available. It validates the result digest, file scope, base hashes and exact,
-   unique edit anchors inside the supplied excerpts. Unknown files, invented types
-   in unsupplied files, malformed output and insufficient context are rejected.
+   unique edit anchors inside the supplied excerpts. One leading `[Groq / model]`
+   attribution line is removed before the body is parsed as JSON. Unknown files,
+   invented types in unsupplied files, malformed output and insufficient context
+   are rejected.
    Semantic correctness still requires review and meaningful tests.
 5. **Apply and test:** `picard_workspace_apply` runs the enrolled tests on the
    baseline first. If they pass and snapshots still match, it journals each write,
