@@ -4,6 +4,7 @@
   "private": true,
   "description": "A small durable AI request workspace with exact approvals and recoverable results.",
   "type": "module",
+  "dependencies": {},
   "engines": {
     "node": ">=24.0.0"
   },
@@ -23,6 +24,7 @@
     "demo:admission-preview": "node examples/admission-preview.mjs",
     "preview:v1": "node examples/workspace-preview.mjs",
     "test:coding-connector": "node --test tools/coding-connector/test/connector.test.mjs tools/coding-connector/test/workspace.test.mjs experimental/runtime-control/test/machine-client.test.mjs",
+    "test:picard-tui": "node --test tools/picard-tui/test/*.test.mjs",
     "test:console-theme": "node --test tools/console-theme/captain.test.mjs && node --jitless --test tools/console-theme/captain.test.mjs"
   },
   "license": "MIT"

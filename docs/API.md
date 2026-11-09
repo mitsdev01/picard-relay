@@ -90,3 +90,17 @@ The runtime re-reads the file on each attempt, so revocation takes effect withou
 Machine drafts have a durable client-id association committed atomically with the draft in the existing metadata namespace. Only that client can recover, approve, submit or read the machine draft/result. Existing owner drafts and signed-board results are never adopted by a machine client, even when its token knows their IDs. Owner-cookie access remains unchanged. Machine result responses omit reviews; machine configuration responses omit owner history statistics, training and progress. Client ids must not be reassigned to unrelated clients when rotating credentials.
 
 The registry must be a regular, single-link file with exactly mode 0600, owned by root or the runtime uid and readable by that process. In the usual unprivileged service, use the runtime uid: a root-owned 0600 file is not readable by an ordinary runtime process. No raw token belongs on the host.
+
+## Laptop review client
+
+An enrolled host may optionally set **`BRIDGE_MACHINE_REVIEW_CLIENTS_FILE`** to a **second** private registry file with the same Linux ownership and mode checks as other admission files. Do not add review fields to `BRIDGE_MACHINE_CLIENTS_FILE`; older host parsers reject unknown columns.
+
+Each row has an id, a single `workspace-review` scope, a **`codingClientId`** naming the laptop coding client whose machine draft the review annotates, `tokenSha256`, and a revocation flag.
+
+A matching `Authorization: Bearer` token may call only:
+
+- `GET /workspace/config`
+- `GET /workspace/requests/<ref>` where the workspace draft for `<ref>` was created under that `codingClientId`
+- `POST /workspace/reviews/<ref>` with `{ expectedRevision, decision, note, resultSha256 }` for that job
+
+It cannot list history, create drafts, approve, submit, update, use owner setup or updates, or call the signed bridge. The **`workspace-coding`** bearer still cannot POST reviews. Sending bearer and owner cookie together remains rejected.

@@ -17,6 +17,7 @@ This page describes the current source contract. Installation-specific settings 
 | Updates | Signed source publication and separately enrolled Linux host updater | GitHub Actions does not deploy. The runtime bundle has 20 allowed modules; host support, Node, configuration and state are outside it. |
 | Cost | Retained Free-policy enrollment and no paid fallback | No live billing/quota verification, usage dashboard or monetary guarantee. |
 | Portability | Offline preview and Linux-qualified signed runtime | No general production installer, bundled production Board app or cross-platform host qualification. |
+| LCARS terminal companion | Optional Node 24 + Windows Terminal UI over the coding connector | Not part of the signed 20-module runtime bundle. Agent CLIs are out of band; Codex is omitted when its installed build requires unsafe MCP flags. `BRIDGE_MACHINE_REVIEW_CLIENTS_FILE` must be set on the host for POST `/workspace/reviews/<ref>` from a laptop bearer. |
 
 The console's reviewed-correction note is deliberately specific to one immutable historical proposal. It is not a general review editor or automatic validation of every answer. It never rewrites the original generated response.
 

@@ -23,14 +23,29 @@ export function parseMachineClientRegistry(text){
   if(!exact(row,['id','tokenSha256','scopes','revoked'])||!/^[a-z0-9-]{1,50}$/.test(row.id)||!/^[a-f0-9]{64}$/.test(row.tokenSha256)||row.revoked!==true&&row.revoked!==false||!Array.isArray(row.scopes)||row.scopes.length!==1||row.scopes[0]!=='workspace-coding'||ids.has(row.id)||hashes.has(row.tokenSha256))stop('machine_clients_invalid');
   ids.add(row.id);hashes.add(row.tokenSha256);clients.push({id:row.id,tokenSha256:row.tokenSha256,revoked:row.revoked});
  }
- return {v:1,clients};
+ return {v:1,kind:'workspace-coding',clients};
+}
+// Separate file from workspace-coding registry; row binds this bearer to exactly one coding client id.
+export function parseMachineReviewClientRegistry(text){
+ if(typeof text!=='string'||Buffer.byteLength(text)>8192)stop('machine_clients_invalid');
+ let doc;try{doc=JSON.parse(text);}catch{stop('machine_clients_invalid');}
+ if(!exact(doc,['v','clients'])||doc.v!==1||!Array.isArray(doc.clients)||doc.clients.length<1||doc.clients.length>8)stop('machine_clients_invalid');
+ const ids=new Set(),hashes=new Set(),clients=[];
+ for(const row of doc.clients){
+  if(!exact(row,['id','tokenSha256','scopes','codingClientId','revoked'])||!/^[a-z0-9-]{1,50}$/.test(row.id)||!/^[a-f0-9]{64}$/.test(row.tokenSha256)||row.revoked!==true&&row.revoked!==false||!Array.isArray(row.scopes)||row.scopes.length!==1||row.scopes[0]!=='workspace-review'||!/^[a-z0-9-]{1,50}$/.test(row.codingClientId)||ids.has(row.id)||hashes.has(row.tokenSha256))stop('machine_clients_invalid');
+  ids.add(row.id);hashes.add(row.tokenSha256);clients.push({id:row.id,tokenSha256:row.tokenSha256,codingClientId:row.codingClientId,revoked:row.revoked});
+ }
+ return {v:1,kind:'workspace-review',clients};
 }
 export function matchMachineClient(registry,token){
  if(!registry||registry.v!==1||!Array.isArray(registry.clients)||!machineToken.test(token??''))return null;
  const actual=Buffer.from(admissionHash(token),'utf8');let matched=null;
  for(const client of registry.clients){
   const expected=Buffer.from(client.tokenSha256,'utf8');
-  if(expected.length===actual.length&&timingSafeEqual(actual,expected)&&client.revoked!==true)matched={id:client.id,scope:'workspace-coding'};
+  if(expected.length===actual.length&&timingSafeEqual(actual,expected)&&client.revoked!==true){
+   if(registry.kind==='workspace-review')matched={id:client.id,scope:'workspace-review',codingClientId:client.codingClientId};
+   else matched={id:client.id,scope:'workspace-coding'};
+  }
  }
  return matched;
 }
@@ -82,22 +97,32 @@ export function createWorkspaceHandler({enabled=false,auth,store,binding,origins
   let origin;try{const host=req.headers.host,u=new URL('https://'+host);if(typeof host==='string'&&u.host===host&&!u.username&&!u.password&&u.pathname==='/'&&!u.search&&!u.hash)origin=u.origin;}catch{}
   if(!allowed.has(origin)||req.headers.origin!==undefined&&req.headers.origin!==origin||!['same-origin','none',undefined].includes(req.headers['sec-fetch-site'])||req.method==='POST'&&req.headers.origin!==origin)return reply(403,{error:'auth_failed'});
   try{
-   let token='',machine=false,clientId=null;
+   let token='',machine=false,clientId=null,machineClient=null;
    const authorization=req.headers.authorization;
    if(authorization!==undefined){
     const match=typeof authorization==='string'?/^Bearer ([A-Za-z0-9_-]{43})$/.exec(authorization):null;
     let client=null;
     if(match&&typeof authenticateMachine==='function'){try{client=await authenticateMachine(match[1]);}catch{client=null;}}
-    if(!client||client.scope!=='workspace-coding'||typeof client.id!=='string'||!/^[a-z0-9-]{1,50}$/.test(client.id))return reply(401,{error:'auth_failed'});
+    if(!client||!['workspace-coding','workspace-review'].includes(client.scope)||typeof client.id!=='string'||!/^[a-z0-9-]{1,50}$/.test(client.id)||client.scope==='workspace-review'&&(typeof client.codingClientId!=='string'||!/^[a-z0-9-]{1,50}$/.test(client.codingClientId)))return reply(401,{error:'auth_failed'});
     if(typeof req.headers.cookie==='string'&&req.headers.cookie.includes('__Host-PicardSession='))return reply(401,{error:'auth_failed'});
-    token=match[1];machine=true;clientId=client.id;
+    token=match[1];machine=true;clientId=client.id;machineClient=client;
    }else{
     const cookies=typeof req.headers.cookie==='string'&&req.headers.cookie.length<=4096?req.headers.cookie.split(';').map(x=>x.trim()).filter(x=>x.startsWith('__Host-PicardSession=')):[];
     token=cookies.length===1?cookies[0].slice('__Host-PicardSession='.length):'';
     if(!machineToken.test(token)||!await auth.authenticate(token))return reply(401,{error:'auth_failed'});
    }
-   if(machine&&!(req.method==='GET'&&(url==='/workspace/config'||readDraft||readResult)||req.method==='POST'&&['/workspace/drafts','/workspace/approvals','/workspace/requests'].includes(url)))return reply(403,{error:'auth_failed'});
-   const permittedDraft=id=>{if(machine&&store.getWorkspaceClient(id)!==clientId)stop('not_registered');return draft(id);};
+   const machineReview=machine&&machineClient?.scope==='workspace-review';
+   const machineCoding=machine&&machineClient?.scope==='workspace-coding';
+   const machineRouteOk=machine&&(
+    machineReview?(req.method==='GET'&&(url==='/workspace/config'||readResult)||req.method==='POST'&&reviewPath)
+    :(req.method==='GET'&&(url==='/workspace/config'||readDraft||readResult)||req.method==='POST'&&['/workspace/drafts','/workspace/approvals','/workspace/requests'].includes(url))
+   );
+   if(machine&&!machineRouteOk)return reply(403,{error:'auth_failed'});
+   function assertReviewDraftBound(ref){
+    const d=store.getWorkspaceDraftByRef(ref);if(!d)stop('not_registered');
+    if(store.getWorkspaceClient(d.payload.requestId)!==machineClient.codingClientId)stop('not_registered');
+   }
+   const permittedDraft=id=>{if(machineCoding&&store.getWorkspaceClient(id)!==clientId)stop('not_registered');return draft(id);};
    if(req.method==='GET'){
     if(historyPath){
      const query=new URL(url,'https://fixture.invalid').searchParams;
@@ -108,9 +133,14 @@ export function createWorkspaceHandler({enabled=false,auth,store,binding,origins
     }
     if(readDraft){if(!uuid.test(readDraft[1]))stop('request_invalid');const d=permittedDraft(readDraft[1]);return reply(200,{v:1,draft:d,registered:!!store.get(d.payload.eventId),state:store.get(d.payload.eventId)?.state??(d.approval.expiresAt<=now()?'expired':'draft'),observedAt:new Date(now()).toISOString()});}
     if(readResult){
-     if(machine){const d=store.getWorkspaceDraftByRef(readResult[1]);if(!d)stop('not_registered');permittedDraft(d.payload.requestId);if(store.get(readResult[1])&&!store.getWorkspaceWork(readResult[1]))stop('not_registered');}
+     if(machineCoding){const d=store.getWorkspaceDraftByRef(readResult[1]);if(!d)stop('not_registered');permittedDraft(d.payload.requestId);if(store.get(readResult[1])&&!store.getWorkspaceWork(readResult[1]))stop('not_registered');}
+     if(machineReview){
+      assertReviewDraftBound(readResult[1]);
+      if(store.get(readResult[1])&&!store.getWorkspaceWork(readResult[1]))stop('not_registered');
+     }
      if(!store.get(readResult[1])){const d=store.getWorkspaceDraftByRef(readResult[1]);if(d){validateWorkspaceDraft(d,binding);return reply(200,{v:1,draft:d,registered:false,state:d.approval.expiresAt<=now()?'expired':'draft',observedAt:new Date(now()).toISOString()});}}
-     return reply(200,await ownedResult(readResult[1],{includeReviews:!machine}));
+     const includeReviews=!machine||machineReview;
+     return reply(200,await ownedResult(readResult[1],{includeReviews}));
     }
     let enrolled=false;try{policy();enrolled=true;}catch{}
     const availability=currentAvailability();
@@ -133,6 +163,8 @@ export function createWorkspaceHandler({enabled=false,auth,store,binding,origins
     const saved=store.saveWorkspaceDraft(d,clientId);return reply(201,{v:1,draft:saved,registered:!!store.get(saved.payload.eventId),state:store.get(saved.payload.eventId)?.state??(saved.approval.expiresAt<=now()?'expired':'draft'),observedAt:new Date(now()).toISOString()});
    }
    if(reviewPath){
+    if(machineCoding)return reply(403,{error:'auth_failed'});
+    if(machineReview)assertReviewDraftBound(reviewPath[1]);
     if(!exact(body,['expectedRevision','decision','note','resultSha256']))stop('request_invalid');
     await ownedResult(reviewPath[1]);const review=store.saveWorkspaceReview({ref:reviewPath[1],...body});return reply(200,{v:1,review});
    }

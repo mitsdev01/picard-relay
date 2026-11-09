@@ -78,7 +78,18 @@ export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTes
   for(const f of t.files){relativeFile(f.path);requireThat(f.before===null||sha(Buffer.from(f.before,'base64'))===f.beforeSha256,'backup_corrupt');}
   return {r,w,dir,t};
  }
- function view(t){return {taskId:t.id,requestId:t.id,workspaceId:t.workspaceId,state:t.state,files:t.files.map(f=>({path:f.path,writable:f.writable,beforeSha256:f.beforeSha256,afterSha256:f.afterSha256??null})),tests:t.tests??[],conflicts:t.conflicts??[],providerRetried:false,automaticRepair:false};}
+ function view(t){
+  let testInvocation=null;
+  if(t.testInvocation?.started){
+   const iv=t.testInvocation;
+   testInvocation={
+    phase:typeof iv.phase==='string'?iv.phase:null,
+    id:typeof iv.id==='string'?iv.id:null,
+    pid:typeof iv.pid==='number'&&iv.pid>0?iv.pid:null
+   };
+  }
+  return {taskId:t.id,requestId:t.id,workspaceId:t.workspaceId,state:t.state,files:t.files.map(f=>({path:f.path,writable:f.writable,beforeSha256:f.beforeSha256,afterSha256:f.afterSha256??null})),tests:t.tests??[],testInvocation,conflicts:t.conflicts??[],providerRetried:false,automaticRepair:false};
+ }
  function unlock(dir,t){const lock=path.join(dir,'active');if(fs.existsSync(lock)&&fs.readFileSync(lock,'utf8')===t.id)fs.unlinkSync(lock);}
  async function exclusive(dir,t,fn) {
   const file=path.join(dir,'operation');let fd;

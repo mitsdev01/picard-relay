@@ -14,7 +14,7 @@ Picard Relay accepts a narrowly approved AI request, records it durably, sends i
 
 **This fork:** [Preserving the connector and companion across updates](FORK-UPDATES.md)
 
-**Cursor coding:** [Trusted local workspaces, tests and recovery](TRUSTED-WORKSPACES.md)
+**Cursor coding:** [Trusted local workspaces, tests and recovery](TRUSTED-WORKSPACES.md) **[LCARS terminal companion](PICARD-TUI.md)**
 
 **Earned ranks and the space HUD:** [Owner features](OWNER-FEATURES.md) · [Physical badge research](BADGE-RESEARCH.md)
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-04",
+  "updatedAt": "2026-11-06",
   "project": "Picard Relay",
   "summary": "Self-hosted Node.js and SQLite delivery layer for exact approved AI requests, durable one-shot invocation and saved-result recovery.",
   "documentationIndex": "docs/README.md",
@@ -184,6 +184,18 @@
     {
       "path": "tools/coding-connector/server.mjs",
       "role": "local stdio MCP connector for one exact workspace coding request; no command execution"
+    },
+    {
+      "path": "tools/picard-tui/main.mjs",
+      "role": "Windows Terminal LCARS companion: agent launch, durable task polling, apply, optional review POST"
+    },
+    {
+      "path": "tools/picard-tui/lcars-ui.mjs",
+      "role": "Captain-palette LCARS terminal layout: panels, rails, status strips, banner"
+    },
+    {
+      "path": "tools/picard-tui/Install-PicardConsole.ps1",
+      "role": "PowerShell 5.1 bootstrap: prerequisites and launch of main.mjs"
     }
   ],
   "release": {
@@ -222,7 +234,8 @@
     "experimental/compute-broker/EXECUTION.md",
     "experimental/compute-broker/UNATTENDED.md",
     "experimental/compute-broker/CODING-WORKFLOW.md",
-    "docs/CURSOR-CODING-CONNECTOR.md"
+    "docs/CURSOR-CODING-CONNECTOR.md",
+    "docs/PICARD-TUI.md"
   ],
   "workRegister": "docs/work-register.json",
   "illustrations": [

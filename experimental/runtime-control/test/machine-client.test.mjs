@@ -5,11 +5,14 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {workspaceFixture,fixtureToken} from '../../../test/fixtures/workspace-fixture.mjs';
-import {parseMachineClientRegistry,matchMachineClient} from '../src/admission-handler.mjs';
+import {parseMachineClientRegistry,parseMachineReviewClientRegistry,matchMachineClient} from '../src/admission-handler.mjs';
 import {createMachineAuthenticator} from '../src/admission-runtime.mjs';
 
 function registryFor(token,{revoked=false}={}){
  return parseMachineClientRegistry(JSON.stringify({v:1,clients:[{id:'work-laptop-coding',tokenSha256:createHash('sha256').update(token).digest('hex'),scopes:['workspace-coding'],revoked}]}));
+}
+function reviewRegistryFor(token,codingClientId,{revoked=false}={}){
+ return parseMachineReviewClientRegistry(JSON.stringify({v:1,clients:[{id:'work-laptop-review',tokenSha256:createHash('sha256').update(token).digest('hex'),scopes:['workspace-review'],codingClientId,revoked}]}));
 }
 test('Linux registry requires exact 0600 and rechecks revocation and file safety',{skip:process.platform!=='linux'},()=>{
  const dir=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'machine-registry-')),file=path.join(dir,'clients.json');
@@ -26,7 +29,12 @@ test('Linux registry requires exact 0600 and rechecks revocation and file safety
   }finally{fs.rmSync(dir,{recursive:true,force:true});}
  })();
 });
-test('machine registry rejects extra authority and duplicate hashes',()=>{
+ test('review registry rejects invalid rows',()=>{
+  const tokenSha256='a'.repeat(64),row={id:'r1',tokenSha256,scopes:['workspace-review'],codingClientId:'work-laptop-coding',revoked:false};
+  assert.throws(()=>parseMachineReviewClientRegistry(JSON.stringify({v:1,clients:[row],note:'no'})),error=>error.code==='machine_clients_invalid');
+  assert.throws(()=>parseMachineReviewClientRegistry(JSON.stringify({v:1,clients:[{...row,scopes:['workspace-coding']}]})),error=>error.code==='machine_clients_invalid');
+ });
+ test('machine registry rejects extra authority and duplicate hashes',()=>{
  const tokenSha256='a'.repeat(64),row={id:'work-laptop-coding',tokenSha256,scopes:['workspace-coding'],revoked:false};
  assert.equal(createMachineAuthenticator(''),null);
  assert.equal(createMachineAuthenticator(undefined),null);
@@ -96,5 +104,33 @@ test('machine identity binds drafts durably and excludes owner and other-client 
   revoked=true;assert.equal((await f.request('/workspace/requests/'+d.payload.eventId,{headers:headers(0)})).status,401);
   assert.equal((await f.request('/workspace/requests/'+d.payload.eventId)).status,200);
   assert.equal(f.calls,1);
+ }finally{f.close();}
+});
+
+test('workspace-review bearer may read result with reviews and post accept when bound to coding client',async()=>{
+ const coding=randomBytes(32).toString('base64url'),review=randomBytes(32).toString('base64url');
+ let regCoding=registryFor(coding),regReview=reviewRegistryFor(review,'work-laptop-coding');
+ const authenticateMachine=async t=>matchMachineClient(regCoding,t)??matchMachineClient(regReview,t);
+ const f=await workspaceFixture({realMarkers:false,authenticateMachine});
+ const h={cookie:'',authorization:'Bearer '+coding};
+ const hReview={cookie:'',authorization:'Bearer '+review};
+ try{
+  const brief=f.brief(),created=await f.request('/workspace/drafts',{headers:h,body:brief});
+  assert.equal(created.status,201);
+  f.advance(61000);
+  const proof=(await f.request('/workspace/approvals',{headers:h,body:{requestId:brief.requestId}})).body;
+  const d=created.body.draft;
+  assert.equal((await f.request('/workspace/requests',{headers:h,body:{requestId:brief.requestId,nonce:proof.nonce,draftSha256:d.draftSha256,approve:true}})).status,201);
+  await f.dispatcher.runOnce();
+  const ref=d.payload.eventId;
+  const pre=(await f.request('/workspace/requests/'+ref,{headers:hReview})).body;
+  assert.equal(pre.review?.revision>=0,true);
+  const ownerFirst=(await f.request('/workspace/requests/'+ref)).body;
+  assert.equal((await f.request('/workspace/reviews/'+ref,{body:{expectedRevision:0,decision:'accepted',note:'owner',resultSha256:ownerFirst.result.sha256}})).status,200);
+  const afterOwner=(await f.request('/workspace/requests/'+ref,{headers:hReview})).body;
+  assert.equal(afterOwner.review.latest.decision,'accepted');
+  assert.equal((await f.request('/workspace/reviews/'+ref,{headers:hReview,body:{expectedRevision:afterOwner.review.revision,decision:'changes_requested',note:'tui',resultSha256:afterOwner.result.sha256}})).status,200);
+  assert.equal((await f.request('/workspace/drafts',{headers:hReview,body:brief})).status,403);
+  regReview=reviewRegistryFor(review,'other');assert.equal((await f.request('/workspace/requests/'+ref,{headers:hReview})).status,404);
  }finally{f.close();}
 });

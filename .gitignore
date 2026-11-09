@@ -174,3 +174,6 @@ vite.config.ts.timestamp-*
 coding-client.json
 machine-clients.json
 .cursor/mcp.json
+
+# Picard LCARS companion temp MCP trees
+tools/picard-tui/.tmp/
