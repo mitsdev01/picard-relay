@@ -1,6 +1,8 @@
 // Explicit local preview. It exercises production workspace handlers and the
 // durable queue with a synthetic adapter. No provider credentials or network.
 import {createServer} from 'node:http';
+import {createHash} from 'node:crypto';
+import {readFileSync} from 'node:fs';
 import {workspaceFixture,fixtureToken,fixtureOrigin} from '../test/fixtures/workspace-fixture.mjs';
 import {CONSOLE_HTML,createConsoleHandler,consoleSnapshot,contributionRecognition} from '../experimental/runtime-control/src/oracle-service.mjs';
 import {admissionConsoleHtml} from '../experimental/runtime-control/src/admission-ui.mjs';
@@ -10,6 +12,11 @@ const vmCpu=Number(process.env.PICARD_PREVIEW_VM_CPU??38);
 if(!Number.isFinite(vmCpu)||vmCpu<0||vmCpu>100)throw Error('Use a synthetic VM CPU reading from 0 to 100.');
 const recognition=contributionRecognition(process.env.PICARD_PREVIEW_CONTRIBUTION_CREDITS);
 const fixture=await workspaceFixture({realMarkers:false});
+const usageTokenFile=process.env.PICARD_PREVIEW_CODEX_USAGE_TOKEN_FILE;
+const usageToken=usageTokenFile?readFileSync(usageTokenFile,'utf8').trimEnd():null;
+if(usageToken!==null&&!/^[a-f0-9]{64}$/.test(usageToken))throw Error('Invalid preview usage token.');
+const codexUsage=usageToken?fixture.store.relay.openCodexUsage(fixture.binding.ownerId):null;
+const codexUsageKey=usageToken?createHash('sha256').update(usageToken).digest():null;
 const accepted=Number(process.env.PICARD_PREVIEW_ACCEPTED_RESULTS??0);
 if(![0,1,5,25].includes(accepted))throw Error('Use 0, 1, 5 or 25 synthetic accepted results.');
 for(let i=0;i<accepted;i++){
@@ -27,12 +34,12 @@ const previewTheme=process.env.PICARD_PREVIEW_THEME??'standard';
 if(!['standard','captain'].includes(previewTheme))throw Error('PICARD_PREVIEW_THEME must be standard or captain.');
 const previewHtml=theme=>admissionConsoleHtml(CONSOLE_HTML,{activationEnabled:true,workspaceEnabled:true,theme})
  .replace('</style>','.preview-banner{position:relative;z-index:3;padding:9px 24px;border-bottom:1px solid #303b3f;color:#dec387;font:13px system-ui}</style>')
- .replace('<body>','<body><div class="preview-banner">Local v1 preview · synthetic answers · no external AI calls</div>');
+ .replace('<body>','<body><div class="preview-banner">' + (codexUsage?'Local preview · sample relay data · recorded Codex usage':'Local preview · synthetic answers and metrics · no external AI calls') + '</div>');
 const html=previewHtml(previewTheme),htmlThemes={admiral:previewHtml('standard'),captain:previewHtml('captain')};
 const upstreamState=process.env.PICARD_PREVIEW_UPSTREAM??'unavailable';
 if(!['unavailable','checking','upstream_available','deployment_pending','current'].includes(upstreamState))throw Error('Invalid synthetic upstream state.');
 const upstream={read:()=>({v:1,state:upstreamState,installed:'a'.repeat(40),incorporated:'b'.repeat(40),fork:'c'.repeat(40),upstream:'d'.repeat(40),checkedAt:Date.now(),upstreamPending:upstreamState==='upstream_available',deploymentPending:upstreamState==='deployment_pending'})};
-const handler=createConsoleHandler({enabled:true,html,htmlThemes,recognition,upstream,origins:['https://127.0.0.1:'+port],updates:{status:()=>updateState,request:()=>{updateState={v:1,enabled:true,state:'checking',requestedAt:Date.now(),finishedAt:null,retryAt:null};setTimeout(()=>{updateState={...updateState,state:'up_to_date',finishedAt:Date.now()};},1500);return updateState;}},auth:{readPublicState:()=>({enrolled:true}),authenticate:()=>signedIn,logout:()=>{signedIn=false;return true;},login:()=>{signedIn=true;return {token:fixtureToken,expiresAt:Date.now()+3600000};}},getSnapshot:()=>consoleSnapshot({serviceReady:true,resultRecoveryReady:true,providerReady:true,acceptingNewWork:true,draining:false,blockingCode:'ready'},fixture.store.relay.scopedStats({ownerId:fixture.binding.ownerId}),new Date(),'owner',{v:1,scope:'vm',observedAtMs:Date.now(),cpuPercent:vmCpu,memoryUsedBytes:384*1048576,memoryTotalBytes:1024*1048576,relayMemoryBytes:48*1048576}),getRecentJobs:query=>fixture.store.relay.recentJobs({...query,ownerId:fixture.binding.ownerId})});
+const handler=createConsoleHandler({enabled:true,html,htmlThemes,recognition,upstream,codexUsage,codexUsageKey,origins:['https://127.0.0.1:'+port],updates:{status:()=>updateState,request:()=>{updateState={v:1,enabled:true,state:'checking',requestedAt:Date.now(),finishedAt:null,retryAt:null};setTimeout(()=>{updateState={...updateState,state:'up_to_date',finishedAt:Date.now()};},1500);return updateState;}},auth:{readPublicState:()=>({enrolled:true}),authenticate:()=>signedIn,logout:()=>{signedIn=false;return true;},login:()=>{signedIn=true;return {token:fixtureToken,expiresAt:Date.now()+3600000};}},getSnapshot:()=>consoleSnapshot({serviceReady:true,resultRecoveryReady:true,providerReady:true,acceptingNewWork:true,draining:false,blockingCode:'ready'},fixture.store.relay.scopedStats({ownerId:fixture.binding.ownerId}),new Date(),'owner',{v:1,scope:'vm',observedAtMs:Date.now(),cpuPercent:vmCpu,memoryUsedBytes:384*1048576,memoryTotalBytes:1024*1048576,relayMemoryBytes:48*1048576}),getRecentJobs:query=>fixture.store.relay.recentJobs({...query,ownerId:fixture.binding.ownerId})});
 const server=createServer(async(req,res)=>{
  if(req.url.startsWith('/workspace/')){
   if(!signedIn){res.writeHead(401,{'Content-Type':'application/json'});res.end('{"error":"auth_failed"}');return;}

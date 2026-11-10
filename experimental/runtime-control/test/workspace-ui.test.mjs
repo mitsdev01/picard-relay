@@ -10,7 +10,7 @@ test('the complete workspace fits the production console document limit',()=>{
  assert.doesNotThrow(()=>createConsoleHandler({enabled:true,html}));
 });
 const flush=()=>new Promise(r=>setImmediate(r));
-async function harness(t,{configTransform=value=>value,beforeBoot=async()=>{},initialHash='#requests',configDelayMs=0,theme='standard',savedStealth=null}={}){
+async function harness(t,{configTransform=value=>value,beforeBoot=async()=>{},initialHash='#requests',configDelayMs=0,theme='standard',savedStealth=null,storage}={}){
  const f=await workspaceFixture({realMarkers:false});t.after(()=>f.close());const created=[],downloads=[],urls=new Map(),listeners={},windowListeners={},mediaListeners={},timers=new Map();let timerId=0,signedIn=true,failReads=false,holdRead=null,heldResultResponse=null;
  const element=(tag='div')=>{const n={tag,children:[],attrs:{},dataset:{},listeners:{},value:'',hidden:true,disabled:false,_text:'',get textContent(){return this._text+this.children.map(x=>x.textContent).join('');},set textContent(v){this._text=String(v);this.children=[];},classList:{toggle(){}},removeAttribute(k){delete this.attrs[k];delete this[k];},setAttribute(k,v){this.attrs[k]=String(v);},addEventListener(k,fn){this.listeners[k]=fn;},append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this._text='';this.children=nodes;},focus(){},remove(){},click(){if(this.tag==='a')downloads.push({name:this.download,url:this.href});else return this.listeners.click?.();},animate(){return {cancel(){}};}};created.push(n);return n;};
  const els=new Map([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,element()]));
@@ -32,9 +32,9 @@ async function harness(t,{configTransform=value=>value,beforeBoot=async()=>{},in
   if(failReads&&options.method==='GET'&&url.startsWith('/workspace/requests/'))throw Error('synthetic_read_failure');
   const r=await f.request(url,{method:options.method,body:options.body===undefined?undefined:JSON.parse(options.body)});if(options.method==='GET'&&url.startsWith('/workspace/requests/')&&heldResultResponse){const held=heldResultResponse;heldResultResponse=null;held.captured();await held.gate;}return response(r.status,url==='/workspace/config'?configTransform(r.body):r.body);
  };
- const context=vm.createContext({document,window,TextEncoder,AbortController,Date,queueMicrotask,crypto:{randomUUID},Blob,URL:{createObjectURL:b=>{const id='blob:'+randomUUID();urls.set(id,b);return id;},revokeObjectURL:id=>urls.delete(id)},navigator:{clipboard:{writeText:async text=>{context.copied=text;}}},setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),fetch});
+ const context=vm.createContext({document,window,localStorage:storage,TextEncoder,AbortController,Date,queueMicrotask,crypto:{randomUUID},Blob,URL:{createObjectURL:b=>{const id='blob:'+randomUUID();urls.set(id,b);return id;},revokeObjectURL:id=>urls.delete(id)},navigator:{clipboard:{writeText:async text=>{context.copied=text;}}},setTimeout:fn=>{timers.set(++timerId,fn);return timerId;},clearTimeout:id=>timers.delete(id),fetch});
  await beforeBoot(f);
- context.localStorage={getItem:()=>savedStealth,setItem(){}};
+ context.localStorage=storage??{getItem:key=>key==='picard:stealth'?savedStealth:null,setItem(){}};
  vm.runInContext(script.replace('motion();void boot();','globalThis.workspaceTest={get configFlight(){return workConfigFlight;},get draft(){return workDraft;},get result(){return workResult;},get ref(){return workRef;},get poll(){return workTimer;},loadWorkspace,readWorkspaceRequest,newWorkspaceRequest};motion();globalThis.workspaceBoot=boot();'),context);
  // Await actual bootstrap/configuration work, not an arbitrary count of event-loop ticks.
  await context.workspaceBoot;await context.workspaceTest.configFlight;await flush();
@@ -48,7 +48,7 @@ test('saved Stealth preference boots the workspace without accessing uninitializ
 });
 
 test('v1 UI: ordinary brief, approval, result formatting, exact downloads and local review',async t=>{
- const h=await harness(t),noDisplayStorage=script.replace(/localStorage\.(?:getItem\(stealthPreference\)|setItem\(stealthPreference,String\(stealthFlags\)\))/g,'');
+  const h=await harness(t),noDisplayStorage=script.replace(/localStorage\.(?:getItem\((?:stealth|cockpit)Preference\)|setItem\(stealthPreference,String\(stealthFlags\)\)|setItem\(cockpitPreference,String\(cockpitFlags\)\))/g,'');
  const appearanceWrite="document.cookie='PicardAppearance='+next+'; Path=/; Max-Age=31536000; SameSite=Strict'+(location.protocol==='https:'?'; Secure':'');";
  const appearanceRead="document.cookie.split(';').map(s=>s.trim()).filter(s=>s.startsWith('PicardAppearance='))";
  assert.equal(noDisplayStorage.split(appearanceWrite).length,2);assert.equal(noDisplayStorage.split(appearanceRead).length,2);
@@ -150,6 +150,16 @@ test('a status response captured before review cannot erase the saved review or 
  await h.click('request-changes');assert.equal(h.context.workspaceTest.result.review.revision,1);held.release();await reading;assert.equal(h.context.workspaceTest.result.review.revision,1);assert.equal(h.get('training-rank').textContent,'Lieutenant');assert.match(h.get('request-review-summary').textContent,/Changes requested/);assert.equal(h.f.calls,1);
 });
 async function reviewedFixture(f){const d=await f.prepare(),proof=await f.approve(d);await f.submit(d,proof);await f.dispatcher.runOnce();const result=(await f.request('/workspace/requests/'+d.payload.eventId)).body;await f.request('/workspace/reviews/'+result.ref,{body:{expectedRevision:0,decision:'changes_requested',note:'Reviewed fixture.',resultSha256:result.result.sha256}});}
+test('a remembered cockpit opens the requested deck even with stars off',async t=>{
+ const storage={getItem:key=>key==='picard:cockpit'?'1':null};
+ const h=await harness(t,{initialHash:'#requests',storage});
+ assert.equal(h.get('console-surface').dataset.cockpit,'true');
+ assert.equal(h.get('console-surface').dataset.starfield,'false');
+ assert.equal(h.get('console-surface').dataset.hudExpanded,'true');
+ assert.equal(h.get('view-requests').hidden,false);
+ assert.equal(h.context.window.location.hash,'#requests');
+ assert.equal(h.f.calls,0);
+});
 test('the first-request walkthrough leads to an editable checklist and closes on review',async t=>{
  const h=await harness(t,{initialHash:'#overview'}),guide=h.get('first-run-walkthrough');
  assert.equal(guide.hidden,false);

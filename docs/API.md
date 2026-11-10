@@ -128,6 +128,48 @@ A matching `Authorization: Bearer` token may call only:
 
 It cannot list history, create drafts, approve, submit, update, use owner setup or updates, or call the signed bridge. Neither laptop bearer can read or write quality grades. The **`workspace-coding`** bearer still cannot POST reviews. Sending bearer and owner cookie together remains rejected.
 
+## Codex Savings comparisons
+
+For planned comparisons, record a baseline and an assisted run with the same
+comparison ID. To compare a standalone Picard run with a later baseline, use
+the standalone run's full usage record ID as the baseline's comparison ID.
+The Codex completion recorder accepts this ID with `--comparison` and
+`--variant baseline`. Savings pairs runs within the same owner, model and
+reasoning effort. It preserves the recorded usage and any existing explicit
+comparison.
+
+### Prepare context before starting Codex
+
+For a self-contained brief, send the brief directly to Codex. When an existing
+Picard proposal can stand in for a larger block of source context, use the
+saved result export to prepare the first prompt.
+
+```sh
+node tools/codex-handoff.mjs --brief task.txt --context sources.txt --result picard.json | codex exec --sandbox read-only -
+```
+
+The helper checks that the saved answer is complete and matches its SHA-256.
+It uses the proposal only when the prepared prompt is at least 512 bytes
+smaller and at least 25% shorter in UTF-8. It keeps the original context if
+the proposal is missing, rejected, or fails validation. The byte budget is a
+routing heuristic. Measure Codex usage to determine the effect on tokens.
+Picard output stays untrusted reference data. The helper prepares text locally
+and leaves the relay's request approval and provider limits in place.
+
+Preparing the context before launch avoids a model call to retrieve it. For
+text-only reviews that need no integrations or project instructions, use a
+read-only Codex run scoped to the brief.
+
+```sh
+node tools/codex-handoff.mjs --brief task.txt | codex exec --ignore-user-config --disable apps --sandbox read-only -
+```
+
+This Codex option also omits the configured completion notifier. Keep the
+normal configuration or pass the notifier explicitly to record usage in
+Savings. Keep the configuration identical on both sides of a comparison.
+The current recorder counts preloaded proposals as input without a Picard
+tool-call label.
+
 ## Response quality grades
 
 In a saved result, open **Quality**, select 1 (Poor) through 5 (Excellent), optionally add a note and save. The latest score shows whether the owner or a signed client recorded it. History preserves earlier grades. Grades describe the exact saved answer text; they do not accept a result, earn rank, change provider selection or run another call.
