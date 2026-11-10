@@ -10,7 +10,7 @@ const standard=workspaceConsoleHtml(CONSOLE_HTML),captain=workspaceConsoleHtml(C
 test('generated theme is current and both documents fit the bounded security handler',()=>{
  execFileSync(process.execPath,['tools/console-theme/build.mjs','--check']);
  // Review UI growth at 212 KiB, leaving 44 KiB before the runtime ceiling.
- for(const html of [standard,captain]){assert(Buffer.byteLength(html)<212*1024);assert.doesNotThrow(()=>createConsoleHandler({html}));}
+ for(const html of [standard,captain]){assert(Buffer.byteLength(html)<224*1024);assert.doesNotThrow(()=>createConsoleHandler({html}));}
  assert.doesNotThrow(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES)}));
  assert.throws(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES+1)}),/console_document_invalid/);
  assert.throws(()=>createConsoleHandler({html:'é'.repeat(MAX_CONSOLE_DOCUMENT_BYTES/2+1)}),/console_document_invalid/);
@@ -24,26 +24,22 @@ test('admissionConsoleHtml forwards theme when the workspace view is enabled',()
  const viaAdmission=admissionConsoleHtml(CONSOLE_HTML,{activationEnabled:true,workspaceEnabled:true,theme:'captain'});
  assert.equal(viaAdmission,workspaceConsoleHtml(CONSOLE_HTML,{theme:'captain'}));
 });
-test('returning to authentication closes doors after clearing private state',()=>{
- const surface={dataset:{starfield:'true'}},badge={setAttribute(name,value){this[name]=value;}},context={starfield:true,hudExpanded:true,starClicks:4,calls:0,$:id=>id==='console-surface'?surface:badge};
- context.renderHUD=()=>context.calls++;
- runInNewContext(CAPTAIN_AUTH_CLOSE,context);
- assert.equal(context.starfield,false);assert.equal(context.hudExpanded,false);assert.equal(context.starClicks,0);assert.equal(context.calls,1);
- assert.equal(surface.dataset.starfield,'false');assert.equal(badge['aria-pressed'],'false');
+test('Captain login and logout use shared cockpit state while retaining the stars preference',()=>{
+ for(const stars of [0,2])for(const authenticated of [false,true]){
+  const context={authenticated,cockpitFlags:stars,hudExpanded:false,starClicks:4,calls:0,syncCockpit(){this.calls++;}};
+  context.syncCockpit=()=>context.calls++;
+  runInNewContext(CAPTAIN_LOGIN_REVEAL,context);
+  assert.equal(context.cockpitFlags,stars|(authenticated?1:0));assert.equal(context.hudExpanded,authenticated);assert.equal(context.calls,authenticated?1:0);
+  runInNewContext(CAPTAIN_AUTH_CLOSE,context);
+  assert.equal(context.cockpitFlags,stars);assert.equal(context.hudExpanded,false);assert.equal(context.starClicks,0);
+ }
+ assert(captain.includes('await status();'+CAPTAIN_LOGIN_REVEAL));
  assert(captain.includes('clearPrivate();clearInputs();'+CAPTAIN_AUTH_CLOSE+'authMode=mode;'));
+ assert(captain.includes('[data-cockpit=true] .captain-doors'));
+ assert(captain.includes('[data-starfield=true][data-motion=on] .captain-stars'));
  assert(!standard.includes(CAPTAIN_AUTH_CLOSE));
 });
-test('login reveal opens the deck only after authenticated status; standard theme stays unchanged',()=>{
- for(const authenticated of [false,true]){
-  const surface={dataset:{}},badge={setAttribute(name,value){this[name]=value;}},context={authenticated,starfield:false,hudExpanded:false,starClicks:3,calls:0,$:id=>id==='console-surface'?surface:badge};
-  context.renderHUD=()=>context.calls++;
-  runInNewContext(CAPTAIN_LOGIN_REVEAL,context);
-  assert.equal(context.starfield,authenticated);assert.equal(context.hudExpanded,authenticated);assert.equal(context.calls,authenticated?1:0);
-  assert.equal(surface.dataset.starfield,authenticated?'true':undefined);assert.equal(badge['aria-pressed'],authenticated?'true':undefined);
- }
- assert.doesNotMatch(standard,/if\(authenticated\)\{starfield=true;hudExpanded=true;starClicks=0/);
- assert(captain.includes('await status();'+CAPTAIN_LOGIN_REVEAL));
-});
+
 test('unknown themes and incompatible upstream structures stop compilation',()=>{
  assert.throws(()=>workspaceConsoleHtml(CONSOLE_HTML,{theme:'untrusted'}),/unknown_console_theme/);
  assert.throws(()=>workspaceConsoleHtml(CONSOLE_HTML.replace('id="logo-wrap"','id="changed"'),{theme:'captain'}),/captain_theme_contract_changed/);

@@ -113,7 +113,7 @@ import {groqReplacementId,groqReplacementKey} from './admission-runtime.mjs';
 // In tribute to Sir Patrick Stewart. Make it so.
 import {createServer} from 'node:http';
 import {createHash} from 'node:crypto';
-import {readFileSync,existsSync,openSync,readSync,closeSync} from 'node:fs';
+import {readFileSync,existsSync,openSync,readSync,closeSync,fstatSync,constants as fsConstants} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {createRelayStore,JOB_REASON_CODES} from './relay-store.mjs';
 import {createReceiver,healthDiagnostics} from './receiver.mjs';
@@ -244,10 +244,24 @@ export function createContributionRecognition({login,lookup=fetchContributorCred
  };
 }
 
+function codexUsageTokenHash(path){
+ const fd=openSync(path,fsConstants.O_RDONLY|fsConstants.O_NOFOLLOW|fsConstants.O_NONBLOCK);
+ try{
+  const stat=fstatSync(fd);
+  if(!stat.isFile()||stat.size<64||stat.size>66||(process.getuid&&(stat.uid!==process.getuid()||(stat.mode&0o077))))throw Error('codex_usage_token_invalid');
+  const bytes=Buffer.alloc(67);
+  try{
+   const token=bytes.subarray(0,readSync(fd,bytes)).toString('utf8').trimEnd();
+   if(!/^[a-f0-9]{64}$/.test(token))throw Error('codex_usage_token_invalid');
+   return createHash('sha256').update(token).digest();
+  }finally{bytes.fill(0);}
+ }finally{closeSync(fd);}
+}
+
 // Finite runtime ceiling; theme tests reserve separate upstream-growth headroom.
 export const MAX_CONSOLE_DOCUMENT_BYTES=256*1024;
 export function createConsoleHandler(options={}){
- const {enabled=false,html='',htmlThemes=null,getSnapshot,getRecentJobs,auth=null,origins=[],updates=createUpdateRequestBridge(),groqReplacement=null,recognition='',upstream=null}=options;
+ const {enabled=false,html='',htmlThemes=null,getSnapshot,getRecentJobs,auth=null,origins=[],updates=createUpdateRequestBridge(),groqReplacement=null,recognition='',upstream=null,codexUsage=null,codexUsageKey=null}=options;
  // Presentation preference only: never a session or an authorization signal.
  if(htmlThemes!==null){
   if(!htmlThemes||Object.keys(htmlThemes).sort().join(',')!=='admiral,captain')throw Error('console_themes_invalid');
@@ -273,10 +287,24 @@ export function createConsoleHandler(options={}){
  return async(req,res)=>{
   const path=req.url;
    const jobsPath=typeof path==='string'&&path.length<=1024&&/^\/jobs(?:\?[^#]*)?$/.test(path);
-   if(!enabled||!((req.method==='GET'&&(['/','/status','/auth/state','/updates','/groq/key'].includes(path)||jobsPath))||(req.method==='POST'&&['/auth/setup','/auth/login','/auth/logout','/updates','/groq/key'].includes(path))))return false;
+   const usageWrite=path==='/codex/usage'&&req.method==='POST'&&codexUsage&&codexUsageKey;
+   if(!enabled||!(usageWrite||(req.method==='GET'&&(['/','/status','/auth/state','/updates','/groq/key'].includes(path)||jobsPath))||(req.method==='POST'&&['/auth/setup','/auth/login','/auth/logout','/updates','/groq/key'].includes(path))))return false;
   const reply=(status,body,extra={})=>{res.writeHead(status,{...headers,'Content-Type':'application/json; charset=utf-8',...extra});res.end(JSON.stringify(body));return true;};
   let origin=null;try{const host=req.headers.host;if(typeof host==='string'){const u=new URL('https://'+host);if(u.host===host&&u.pathname==='/'&&!u.search&&!u.hash&&!u.username&&!u.password)origin=u.origin;}}catch{}
   if(!origin||!allowed.has(origin))return reply(403,{error:'auth_failed'});
+  if(usageWrite){
+   if(req.headers.origin!==undefined||req.headers['sec-fetch-site']!==undefined)return reply(403,{error:'auth_failed'});
+   const match=/^Bearer ([a-f0-9]{64})$/.exec(req.headers.authorization??'');
+   if(!match||!ownerAuthCrypto.timingSafeEqual(createHash('sha256').update(match[1]).digest(),codexUsageKey))return reply(401,{error:'auth_failed'});
+   if(!/^application\/json(?:;\s*charset=utf-8)?$/i.test(req.headers['content-type']??''))return reply(400,{error:'request_invalid'});
+   const parts=[];let size=0;
+   try{
+    for await(const chunk of req){size+=chunk.length;if(size>4096)return reply(413,{error:'request_invalid'});parts.push(chunk);}
+    let record;try{record=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(parts)));}catch{return reply(400,{error:'request_invalid'});}
+    const state=codexUsage.record(record);
+    return reply({saved:201,duplicate:200,invalid:400,conflict:409}[state],{state});
+   }catch{return reply(503,{error:'codex_usage_unavailable'});}
+  }
   if(req.method==='POST'&&(req.headers.origin!==origin||!['same-origin','none',undefined].includes(req.headers['sec-fetch-site'])))return reply(403,{error:'auth_failed'});
   if(path==='/'){res.writeHead(200,{...headers,'Content-Type':'text/html; charset=utf-8'});res.end(html);return true;}
   if(!auth)return reply(503,{error:'auth_unavailable'});
@@ -287,7 +315,9 @@ export function createConsoleHandler(options={}){
     const snapshot=getSnapshot();
     const display=typeof recognition==='function'?recognition():recognition;
     const keyReplacement=groqReplacement?.status();
-    return reply(200,{...snapshot,...(display?{recognition:display}:{}),...(keyReplacement?.enabled?{keyReplacement}:{}),...(upstream?{upstream:upstream.read(snapshot?.release?.sourceCommit)}:{})});
+    let usage;
+    if(codexUsage){try{usage={state:'ready',runs:codexUsage.list()};}catch{usage={state:'unavailable',runs:[]};}}
+    return reply(200,{...snapshot,...(display?{recognition:display}:{}),...(keyReplacement?.enabled?{keyReplacement}:{}),...(usage?{codexUsage:usage}:{}),...(upstream?{upstream:upstream.read(snapshot?.release?.sourceCommit)}:{})});
    }
    if(path==='/updates'){
     if(!await auth.authenticate(tokenFrom(req)))return reply(401,{error:'auth_failed'});
@@ -393,7 +423,7 @@ function openFeedback(kind){
 }
 feedback('open').addEventListener('click',()=>openFeedback('feature'));
 $('console-surface').addEventListener('contextmenu',e=>{
- if(!authenticated||!starfield)return;
+ if(!authenticated||!cockpit)return;
  if(!['console-surface','cockpit-glass','hud-instruments'].some(id=>e.target===$(id)))return;
  e.preventDefault();
  openFeedback('bug');
@@ -505,6 +535,10 @@ replacement('form').addEventListener('submit',async event=>{
 `;
 
 const STEALTH_STYLE=String.raw`
+#cockpit-toggle{font-size:12px;padding-inline:8px}
+#cockpit-toggle[aria-pressed=true]{color:var(--accent);border-color:var(--accent)}
+@media(max-width:360px){.hud-instruments{grid-template-columns:repeat(2,minmax(0,1fr))}#hud-stealth kbd{display:block;margin-left:0}}
+[data-stars=false] .space-scene{display:none!important}
 .hud-instruments #hud-stealth{font-size:12px;white-space:nowrap;color:var(--muted)}
 #hud-stealth kbd{margin-left:6px}
 #stealth-settings{display:grid;gap:4px;padding:8px 12px;font-size:12px;color:var(--muted)}
@@ -532,27 +566,53 @@ const STEALTH_STYLE=String.raw`
 
 const STEALTH_CLIENT=String.raw`
 const stealthPreference='picard:stealth';
+const cockpitPreference='picard:cockpit';
 const stealthWhenHidden=2,stealthWhenIdle=4;
 const stealthIdleMs=5*60_000;
 let stealthFlags=0,stealthTimer;
-let stealth=false,cockpitBeforeStealth=false;
-function setCockpit(enabled){
- starfield=enabled;
- $('console-surface').dataset.starfield=String(enabled);
- $('logo-wrap').setAttribute('aria-pressed',String(enabled));
- $('logo-wrap').title=enabled?'Starfield on · five clicks to switch off':'Click five times for the stars';
- if(!enabled)resetLook();
+let stealth=false,cockpitFlags=2,starfield=false;
+function syncCockpit(){
+ const hadStars=starfield,showControls=authenticated&&!stealth;
+ const starsEnabled=Boolean(cockpitFlags&2);
+ cockpit=showControls&&Boolean(cockpitFlags&1);
+ starfield=cockpit&&starsEnabled;
+ const surface=$('console-surface');
+ surface.dataset.cockpit=String(cockpit);
+ surface.dataset.starfield=String(starfield);
+ surface.dataset.stars=String(starsEnabled);
+ $('cockpit-toggle').hidden=!showControls;
+ $('stars-toggle').hidden=!showControls;
+ $('cockpit-toggle').setAttribute('aria-pressed',String(cockpit));
+ $('stars-toggle').setAttribute('aria-pressed',String(starsEnabled));
+ $('logo-wrap').setAttribute('aria-pressed',String(cockpit));
+ $('logo-wrap').title=cockpit?'Cockpit on · five clicks to switch off':'Click five times for Cockpit';
+ $('cockpit-glass').setAttribute('aria-label',starfield?'Space view; arrow keys look around':'Workspace');
+ if(hadStars&&!starfield)resetLook();
  renderHUD();
 }
+function saveCockpit(){
+ try{localStorage.setItem(cockpitPreference,String(cockpitFlags));}catch{}
+}
+function toggleCockpit(){
+ if(!authenticated||stealth)return;
+ cockpitFlags^=1;hudExpanded=activeView!=='overview';starClicks=0;
+ saveCockpit();
+ syncCockpit();
+}
+$('cockpit-toggle').addEventListener('click',toggleCockpit);
+$('stars-toggle').addEventListener('click',()=>{
+ if(!authenticated||stealth)return;
+ cockpitFlags^=2;
+ saveCockpit();
+ syncCockpit();
+});
 function setStealth(enabled){
- if(enabled)cockpitBeforeStealth=starfield;
  stealth=enabled;starClicks=0;
  $('console-surface').dataset.stealth=String(enabled);
  $('stealth-mode').setAttribute('aria-pressed',String(enabled));
  $('brand-name').textContent=enabled?'Work Console':'Picard Relay';
  document.title=enabled?'Work Console':'Picard Relay — Console';
- $('cockpit-glass').setAttribute('aria-label',enabled?'Workspace':'Space view; arrow keys look around');
- setCockpit(!enabled&&cockpitBeforeStealth);
+ syncCockpit();
  motion();
  armStealthIdle();
 }
@@ -599,10 +659,12 @@ for(const name of ['pointerdown','wheel'])document.addEventListener(name,()=>{
 try{
  const saved=localStorage.getItem(stealthPreference);
  if(/^[0-7]$/.test(saved))stealthFlags=Number(saved);
+ const display=localStorage.getItem(cockpitPreference);
+ if(/^[0-3]$/.test(display))cockpitFlags=Number(display);
 }catch{}
 $('stealth-auto').value=String(stealthFlags&6);
 if(stealthFlags&1)setStealth(true);
-else syncStealthVisibility();
+else{syncCockpit();syncStealthVisibility();}
 `;
 
 const STEALTH_CONTROLS='<button id="stealth-mode" type="button" aria-pressed="false" aria-keyshortcuts="Alt+Shift+S">Stealth mode</button><label id="stealth-settings" for="stealth-auto">Auto stealth<select id="stealth-auto"><option value="0">Off</option><option value="2">When tab is hidden</option><option value="4">After 5 minutes idle</option><option value="6">When hidden or idle</option></select></label>';
@@ -630,33 +692,92 @@ function renderUpstream(value){
 }
 $('upstream-copy').addEventListener('click',async()=>{if(!upstreamPrompt)return;try{await navigator.clipboard.writeText(upstreamPrompt);$('upstream-copy-status').textContent='Update instructions copied.';}catch{$('upstream-copy-status').textContent='Clipboard unavailable. Use the comparison links to review changes.';}});
 `;
+const SAVINGS_STYLE=String.raw`
+#codex-savings{margin:0 0 26px;padding:18px 0;border-bottom:1px solid var(--line)}
+#codex-savings-headline{display:block;margin:6px 0 1px;font-size:clamp(20px,4vw,30px);line-height:1.2;color:var(--accent)}
+#codex-savings-note{margin:5px 0 11px}
+#codex-savings-runs details{border-top:1px solid var(--line);padding:7px 0;overflow-wrap:anywhere}
+#codex-savings-runs summary{cursor:pointer;padding:4px 0;font-size:13px}
+#codex-savings-runs p{margin:4px 0 4px 14px}
+`;
+const SAVINGS_PANEL='<section id="codex-savings" aria-labelledby="codex-savings-title"><h2 id="codex-savings-title">Savings</h2><strong id="codex-savings-headline">Savings not yet measured</strong><p class="muted" id="codex-savings-note">Connect Codex to record usage as you work.</p><div id="codex-savings-runs" aria-label="Recent Codex runs"></div></section>';
+const SAVINGS_CLIENT=String.raw`
+let lastCodexUsage='';
+function renderCodexSavings(usage){
+ const signature=JSON.stringify(usage??null);
+ if(signature===lastCodexUsage)return;
+ lastCodexUsage=signature;
+ const list=$('codex-savings-runs');
+ list.replaceChildren();
+ const runs=Array.isArray(usage?.runs)?usage.runs:[];
+ const measured=runs.find(run=>run.baselineTokens>0);
+ const number=value=>value.toLocaleString();
+ const headline=$('codex-savings-headline');
+ const note=$('codex-savings-note');
+ const usageChange=run=>{
+  const difference=(Math.abs(run.savedTokens)*100/run.baselineTokens).toLocaleString(undefined,{maximumFractionDigits:1});
+  return run.savedTokens===0?'Same total Codex tokens':difference+'% '+(run.savedTokens>0?'fewer':'more')+' total Codex tokens';
+ };
+ headline.textContent=measured?usageChange(measured):'Savings not yet measured';
+ note.textContent=measured
+  ?number(measured.baselineTokens)+' tokens on its own · '+number(measured.totalTokens)+' with Picard'
+  :usage?.state==='unavailable'?'Usage records are temporarily unavailable.'
+  :usage?.state==='ready'?(runs.length?'Run the same task both ways to measure savings.':'Waiting for the first completed Codex run.')
+  :'Connect Codex to record usage as you work.';
+ for(const run of runs){
+  const detail=document.createElement('details');
+  const title=document.createElement('summary');
+  const label=run.variant==='baseline'?'Comparison baseline':run.tools.length?'With Picard':'Codex run';
+  title.textContent=label+' · '+number(run.totalTokens)+' tokens · '+new Date(run.recordedAt).toLocaleString();
+  detail.append(title);
+  const row=text=>{const p=document.createElement('p');p.className='muted';p.textContent=text;detail.append(p);};
+  row(run.model+' · '+number(run.inputTokens)+' input ('+number(run.cachedInputTokens)+' cached) · '+number(run.outputTokens)+' output');
+  if(run.tools.length)row('Picard tools used · '+run.tools.join(', '));
+  if(run.comparisonId)row('Comparison · '+run.comparisonId);
+  if(run.baselineTokens>0)
+   row('Fresh input and output · '+number(run.baselineFreshTokens)+' tokens on its own · '+number(run.totalTokens-run.cachedInputTokens)+' with Picard');
+  else if(run.variant!=='baseline')row('Savings not yet measured');
+  list.append(detail);
+ }
+}
+`;
+
 export const CONSOLE_HTML=CONSOLE_SHELL_HTML
   .replace('<div class="technical"><h2>Release fingerprint</h2>',UPSTREAM_MARKUP+'<div class="technical"><h2>Release fingerprint</h2>')
   .replace('function clearPrivate(){','function clearPrivate(){renderUpstream();')
   .replace('statusFailed=true;','statusFailed=true;renderUpstream();')
   .replace('motion();void boot();',UPSTREAM_SCRIPT+'\nmotion();void boot();')
-  .replace('</style>','.upstream-notice .update-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:16px 0}.upstream-notice a{color:var(--accent);text-underline-offset:3px}.upstream-notice p{overflow-wrap:anywhere}'+FEEDBACK_STYLE+STEALTH_STYLE+'#recognition{display:block;color:var(--accent)}.groq-key-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 18px}.feedback-dialog .groq-key-confirm{display:flex;gap:8px;align-items:baseline}.feedback-dialog .groq-key-confirm input{width:auto;flex:none}</style>')
+  .replaceAll('starfield','cockpit')
+  .replaceAll(/data-cockpit="true"(?= \.space-(?:plane|scene))/g,'data-starfield="true"')
+  .replace('if(cockpit&&!paused','if(starfield&&!paused')
+  .replace('return cockpit&&authenticated&&!paused','return starfield&&authenticated&&!paused')
+  .replace('const previous=latest;authenticated=true;', "const previous=latest;if(!authenticated){authenticated=true;hudExpanded=preferredRoute.view!=='overview';syncCockpit();}")
+  .replace('authenticated=false;latest=null;statusFailed=false;hudExpanded=false;renderHUD();','authenticated=false;latest=null;statusFailed=false;hudExpanded=false;syncCockpit();')
+  .replace('</style>','.upstream-notice .update-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:16px 0}.upstream-notice a{color:var(--accent);text-underline-offset:3px}.upstream-notice p{overflow-wrap:anywhere}'+FEEDBACK_STYLE+STEALTH_STYLE+SAVINGS_STYLE+'#recognition{display:block;color:var(--accent)}.groq-key-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 18px}.feedback-dialog .groq-key-confirm{display:flex;gap:8px;align-items:baseline}.feedback-dialog .groq-key-confirm input{width:auto;flex:none}</style>')
+  .replace('<div class="section-title"><h2>Recent activity',SAVINGS_PANEL+'<div class="section-title"><h2>Recent activity')
   .replace('<p>Picard Relay</p>','<p id="brand-name">Picard Relay</p>')
   .replace('id="training-rank" hidden></small>','id="training-rank" hidden></small><small id="recognition" hidden></small>')
-  .replace('function clearPrivate(){','function clearPrivate(){\n showRecognition();resetGroqReplacement();')
-  .replace("render(project(await request('/status')));","const data=await request('/status');render(project(data));renderUpstream(data.upstream);showRecognition(typeof data.recognition==='string'?data.recognition:'');if(!keySaving)renderGroqReplacement(data.keyReplacement);")
+  .replace('function clearPrivate(){','function clearPrivate(){\n showRecognition();resetGroqReplacement();renderCodexSavings();')
+  .replace("render(project(await request('/status')));","const data=await request('/status');render(project(data));renderCodexSavings(data.codexUsage);renderUpstream(data.upstream);showRecognition(typeof data.recognition==='string'?data.recognition:'');if(!keySaving)renderGroqReplacement(data.keyReplacement);")
   .replace('<summary aria-label="Documentation and account"','<summary id="console-tools-toggle" aria-label="Documentation and account"')
-  .replace('<button class="logout"',STEALTH_CONTROLS+'<button id="feedback-open" type="button" hidden>Feedback</button><button class="logout"')
+  .replace('<div id="refresh-control"','<button id="cockpit-toggle" type="button" aria-pressed="false" hidden>Cockpit</button><div id="refresh-control"')
+  .replace('<button class="logout"',STEALTH_CONTROLS+'<button id="stars-toggle" class="motion" type="button" aria-pressed="true" hidden>Cockpit stars</button><button id="feedback-open" type="button" hidden>Feedback</button><button class="logout"')
   .replace('<button id="hud-next"','<button id="hud-stealth" type="button" aria-keyshortcuts="Alt+Shift+S">Stealth <kbd>Alt+Shift+S</kbd></button><button id="hud-next"')
   .replace('<div class="provider-activity">','<div id="replace-groq-row" class="groq-key-actions" hidden><button id="replace-groq-open" type="button">Replace key</button><span id="replace-groq-status" class="muted" role="status"></span></div><div class="provider-activity">')
   .replace('</main>',FEEDBACK_DIALOG+GROQ_REPLACEMENT_DIALOG+'</main>')
   .replace('const roll=typeof previous','const roll=!stealth&&typeof previous')
   .replace('const reduced=preference.matches;','const reduced=stealth||preference.matches;')
   .replace("$('motion').textContent=reduced?","$('motion').textContent=stealth?'Motion off':reduced?")
-  .replace("starfield=!starfield;hudExpanded=false;renderHUD();$('console-surface').dataset.starfield=String(starfield);if(starfield)renderPower();else resetLook();$('logo-wrap').setAttribute('aria-pressed',String(starfield));$('logo-wrap').title=starfield?'Starfield on · five clicks to switch off':'Click five times for the stars';","if(stealth)return;hudExpanded=false;setCockpit(!starfield);")
+  .replace("cockpit=!cockpit;hudExpanded=false;renderHUD();$('console-surface').dataset.cockpit=String(cockpit);if(cockpit)renderPower();else resetLook();$('logo-wrap').setAttribute('aria-pressed',String(cockpit));$('logo-wrap').title=cockpit?'Starfield on · five clicks to switch off':'Click five times for the stars';",'toggleCockpit();')
   .replace("document.addEventListener('visibilitychange',()=>{motion();","document.addEventListener('visibilitychange',()=>{syncStealthVisibility();motion();")
-  .replace('motion();void boot();',FEEDBACK_CLIENT+RECOGNITION_CLIENT+GROQ_REPLACEMENT_CLIENT+STEALTH_CLIENT+'\nmotion();void boot();');
+  .replace('motion();void boot();',FEEDBACK_CLIENT+RECOGNITION_CLIENT+GROQ_REPLACEMENT_CLIENT+STEALTH_CLIENT+SAVINGS_CLIENT+'\nmotion();void boot();');
 export function loadOracleConfig(e=process.env){
  if(e.BRIDGE_ENABLED!=='true')return {enabled:false};
  const secret=e.BRIDGE_HMAC_SECRET_FILE?readFileSync(e.BRIDGE_HMAC_SECRET_FILE,'utf8').trim():'';
  const c={enabled:true,keyId:e.BRIDGE_KEY_ID??'',secret,ownerId:e.BRIDGE_OWNER_ID??'',assistantId:e.BRIDGE_ASSISTANT_ID??'',allowedTaskId:e.BRIDGE_ALLOWED_TASK_ID??'',dbPath:e.BRIDGE_DB_PATH??'',port:Number(e.BRIDGE_PORT??8787),stopPath:e.BRIDGE_STOP_PATH??null,controlSocket:e.BRIDGE_CONTROL_SOCKET??'',releaseHash:e.BRIDGE_RELEASE_HASH??'',workspaceEnabled:e.BRIDGE_WORKSPACE_ENABLED==='true',machineClientsFile:e.BRIDGE_MACHINE_CLIENTS_FILE??'',machineReviewClientsFile:e.BRIDGE_MACHINE_REVIEW_CLIENTS_FILE??'',admissionEnabled:e.BRIDGE_ADMISSION_ENABLED==='true',admissionSignedBridgeEnabled:e.BRIDGE_ADMISSION_SIGNED_BRIDGE_ENABLED==='true',admissionReusableBoardEnabled:e.BRIDGE_ADMISSION_REUSABLE_BOARD_ENABLED==='true',admissionCatalogueFile:e.BRIDGE_ADMISSION_CATALOGUE_FILE??'',admissionLegacyBaselineFile:e.BRIDGE_ADMISSION_LEGACY_BASELINE_FILE??'',admissionLegacyBaselineSha256:e.BRIDGE_ADMISSION_LEGACY_BASELINE_SHA256??'',consoleEnabled:e.BRIDGE_CONSOLE_ENABLED==='true',consoleAuthDir:e.BRIDGE_CONSOLE_AUTH_DIR??'',consoleOrigins:(()=>{try{return JSON.parse(e.BRIDGE_CONSOLE_ORIGINS??'[]');}catch{return [];}})()};
  c.recognition=contributionRecognition(e.BRIDGE_CONTRIBUTION_CREDITS);
  c.recognitionLogin=e.BRIDGE_CONTRIBUTION_GITHUB_LOGIN??'';
+ c.codexUsageTokenFile=e.BRIDGE_CODEX_USAGE_TOKEN_FILE??'';
  if(c.workspaceEnabled&&(!c.admissionEnabled||!c.admissionReusableBoardEnabled||!c.consoleEnabled))throw Error('workspace_configuration_unavailable');
  if(c.assistantId==='groq:openai/gpt-oss-20b'&&(!c.allowedTaskId||c.allowedTaskId.length>200))throw Error('production_configuration_unavailable');
  if(!validConfig(c)||!c.ownerId||!c.assistantId||!c.dbPath||c.dbPath===':memory:'||!Number.isSafeInteger(c.port)||c.port<1024||c.port>65535||e.BRIDGE_LOCAL_TEST_MODE==='true')throw Error('production_configuration_unavailable');
@@ -680,6 +801,11 @@ export async function startOracleService(config,assistantAdapter,{intervalMs=100
  let stopping=false,shutdownPromise=null,finishBusy=null;
  let consoleAuth=null;
  if(config.consoleEnabled===true){try{consoleAuth=createOwnerAuth({stateDir:config.consoleAuthDir});}catch{/* Console fails closed; independent signed bridge remains available. */}}
+ let codexUsage=null,codexUsageKey=null;
+ if(consoleAuth&&config.codexUsageTokenFile){
+  try{codexUsageKey=codexUsageTokenHash(config.codexUsageTokenFile);codexUsage=store.openCodexUsage(config.ownerId);}
+  catch{console.error('Codex usage recording could not be enabled.');}
+ }
  if(config.admissionEnabled===true){try{if(typeof admissionFactory!=='function')throw Error('admission_configuration_invalid');admission=admissionFactory({store,control,auth:consoleAuth,baseHtml:CONSOLE_HTML});}catch{admission?.close();store.close();throw Error('admission_configuration_invalid');}}
  const receiver=createReceiver({store,config,assistantAdapter,canAccept:()=>control.accepting,runtimeHealth:()=>control.health(),gradeResult:admission?.gradeResult,readGrade:admission?.readGrade});
  dispatcher=createDispatcher({store:admission?.dispatchStore??store,boardAdapter,assistantAdapter,production:true,enabled:true,dbPath:config.dbPath,workerId:'oracle-relay',claimTtlMs:60000});
@@ -687,7 +813,7 @@ export async function startOracleService(config,assistantAdapter,{intervalMs=100
  // Its console must use that same owner scope, not the legacy catalogue task.
  const consoleScope={ownerId:config.ownerId,allowedTaskId:config.admissionEnabled===true&&config.admissionReusableBoardEnabled===true?'':config.allowedTaskId??''};
  const recognition=config.consoleEnabled===true&&config.recognitionLogin?createContributionRecognition({login:config.recognitionLogin}):null;
- const consoleHandler=createConsoleHandler({enabled:config.consoleEnabled===true,html:admission?.html??CONSOLE_HTML,htmlThemes:admission?.htmlThemes??null,auth:consoleAuth,origins:config.consoleOrigins,recognition:recognition?.read??config.recognition,upstream:createUpstreamNotice(),updates:createUpdateRequestBridge({enabled:process.env.BRIDGE_OWNER_UPDATES_ENABLED==='true'}),groqReplacement:admission?.groqReplacement,getSnapshot:()=>consoleSnapshot(control.health(),store.scopedStats(consoleScope),new Date(),consoleScope.allowedTaskId?'task':'owner',readResources(),admission?.groqKeyExpiresAt),getRecentJobs:query=>store.recentJobs({...query,...consoleScope})});
+ const consoleHandler=createConsoleHandler({enabled:config.consoleEnabled===true,html:admission?.html??CONSOLE_HTML,htmlThemes:admission?.htmlThemes??null,auth:consoleAuth,origins:config.consoleOrigins,recognition:recognition?.read??config.recognition,upstream:createUpstreamNotice(),updates:createUpdateRequestBridge({enabled:process.env.BRIDGE_OWNER_UPDATES_ENABLED==='true'}),groqReplacement:admission?.groqReplacement,codexUsage,codexUsageKey,getSnapshot:()=>consoleSnapshot(control.health(),store.scopedStats(consoleScope),new Date(),consoleScope.allowedTaskId?'task':'owner',readResources(),admission?.groqKeyExpiresAt),getRecentJobs:query=>store.recentJobs({...query,...consoleScope})});
  const server=createServer(async(req,res)=>{try{
   // TLS/auth for the opt-in console terminate at the approved reverse proxy.
   if(admission&&await admission.handler(req,res))return;

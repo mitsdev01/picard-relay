@@ -54,8 +54,8 @@ the reviewed signed release, not through host-side injection. Merging source
 does not itself sign, publish or install a release.
 
 The generated document includes all inline styles, scripts and space scenery.
-Theme tests enforce a 212 KiB UTF-8 review budget; the handler has a separate
-256 KiB hard ceiling (`MAX_CONSOLE_DOCUMENT_BYTES`). This leaves at least 44 KiB
+Theme tests enforce a 224 KiB UTF-8 review budget; the handler has a separate
+256 KiB hard ceiling (`MAX_CONSOLE_DOCUMENT_BYTES`). This leaves at least 32 KiB
 between the build budget and runtime rejection, rather than letting styling
 consume the entire runtime allowance. Boundary tests cover the exact ceiling,
 one byte above it, and multibyte text. CSP hashes, authentication, same-origin
@@ -141,3 +141,12 @@ regardless of which `PICARD_PREVIEW_THEME` is selected as its default.
 The theme regression suite also compares form controls, navigation bindings and
 accessibility attributes across both presentations. This runs in fork release
 qualification and signing, alongside the shared-script and generated-theme checks.
+
+## Upstream cockpit integration
+
+Captain door and panel transitions follow the shared cockpit state. Stars remain
+a separate saved preference, so hiding stars does not close the doors or hide
+controls. Login opens the Captain cockpit while retaining that preference;
+sign-out clears private state before closing it. Native Codex Savings uses the
+same authenticated data and rendering in both themes. The 224 KiB review budget
+accommodates the upstream Savings UI while retaining the 256 KiB hard ceiling.
