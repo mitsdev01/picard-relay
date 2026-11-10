@@ -49,7 +49,10 @@ test('saved Stealth preference boots the workspace without accessing uninitializ
 
 test('v1 UI: ordinary brief, approval, result formatting, exact downloads and local review',async t=>{
  const h=await harness(t),noDisplayStorage=script.replace(/localStorage\.(?:getItem\(stealthPreference\)|setItem\(stealthPreference,String\(stealthFlags\)\))/g,'');
- assert.doesNotMatch(noDisplayStorage,/innerHTML|localStorage|sessionStorage|document\.cookie/);await h.brief();assert(h.context.workspaceTest.draft);assert.equal(h.f.calls,0);assert.equal(h.get('request-approve').disabled,false);
+ const appearanceWrite="document.cookie='PicardAppearance='+next+'; Path=/; Max-Age=31536000; SameSite=Strict'+(location.protocol==='https:'?'; Secure':'');";
+ const appearanceRead="document.cookie.split(';').map(s=>s.trim()).filter(s=>s.startsWith('PicardAppearance='))";
+ assert.equal(noDisplayStorage.split(appearanceWrite).length,2);assert.equal(noDisplayStorage.split(appearanceRead).length,2);
+ assert.doesNotMatch(noDisplayStorage.replace(appearanceWrite,'').replace(appearanceRead,''),/innerHTML|localStorage|sessionStorage|document\.cookie/);await h.brief();assert(h.context.workspaceTest.draft);assert.equal(h.f.calls,0);assert.equal(h.get('request-approve').disabled,false);
  await h.click('request-approve');assert.equal(h.get('request-approve').hidden,true);await h.f.dispatcher.runOnce();await h.click('request-check');assert.equal(h.get('request-original').textContent,h.f.output);assert.equal(h.get('request-result').hidden,false);assert.equal(h.get('request-state').textContent,'Completed · awaiting your review');assert.equal(h.created.some(n=>n.tag==='unsafe-tag'),false);
  assert.equal(h.get('request-handoff').disabled,true);await h.click('request-handoff');const lockedCode=h.created.find(n=>n.tag==='button'&&n.textContent==='Download code');assert.equal(lockedCode.disabled,true);await lockedCode.click();assert.equal(h.downloads.length,0);
  h.get('request-review-note').value='Please check the boundary.';await h.click('request-changes');assert.match(h.get('request-review-summary').textContent,/Changes requested/);assert.equal(h.context.workspaceTest.result.review.revision,1);assert.equal(h.get('request-review-note').value,'');assert.equal(h.f.calls,1);

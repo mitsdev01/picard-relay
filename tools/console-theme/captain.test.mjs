@@ -1,4 +1,5 @@
 import {test} from 'node:test';
+import {createHash} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {runInNewContext} from 'node:vm';
@@ -52,4 +53,47 @@ test('space scene and doors are inside the central window, with privacy footer o
  assert(window>captain.indexOf('<header class="captain-topbar">'));
  assert(scene>window&&doors>scene&&footer>doors);
  assert.equal(captain.slice(footer-6,footer),'</div>');
+});
+
+test('appearance cookie selects only prevalidated documents with their own CSP and shared authentication',async()=>{
+ const auth={authenticate:token=>token==='a'.repeat(43)};
+ const h=createConsoleHandler({enabled:true,html:captain,htmlThemes:{admiral:standard,captain},origins:['https://fixture.invalid'],auth,getSnapshot:()=>({v:1})});
+ const get=async(cookie,url='/',host='fixture.invalid')=>{const res={writeHead(status,headers){this.status=status;this.headers=headers;},end(body){this.body=body;}};res.handled=await h({method:'GET',url,headers:{host,cookie}},res);return res;};
+ for(const [cookie,expected] of [[undefined,captain],['PicardAppearance=admiral',standard],['PicardAppearance=captain',captain],['PicardAppearance=__proto__',captain],['PicardAppearance=admiral; PicardAppearance=captain',captain],['x'.repeat(4097),captain]]){
+  const r=await get(cookie);assert.equal(r.status,200);assert.equal(r.body,expected);assert.equal(r.headers['Cache-Control'],'no-store, private');
+  for(const m of expected.matchAll(/<script>([\s\S]*?)<\/script>/g))assert(r.headers['Content-Security-Policy'].includes(createHash('sha256').update(m[1]).digest('base64')));
+  assert.equal((await get(cookie,'/status')).status,401);
+ }
+ for(const theme of ['admiral','captain'])assert.equal((await get('PicardAppearance='+theme+'; __Host-PicardSession='+'a'.repeat(43),'/status')).status,200);
+ assert.equal((await get('PicardAppearance=admiral','/','untrusted.invalid')).status,403);
+ assert.equal((await get('PicardAppearance=admiral','/?theme=admiral')).handled,false);
+ assert.throws(()=>createConsoleHandler({html:captain,htmlThemes:{admiral:standard,captain:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES+1)}}),/console_document_invalid/);
+});
+
+test('appearance switching guards busy operations, cancellation and unavailable cookies',()=>{
+ const source=standard.slice(standard.indexOf("const appearance=$('console-appearance');"),standard.indexOf('\nfunction ',standard.indexOf("const appearance=$('console-appearance');")));
+ // Bound the exact listener rather than running the application or any network.
+ const script=source;
+ function fixture({busy=false,text='',confirm=true,cookies=true}={}){
+  const select={value:'',addEventListener(type,fn){this.change=fn;}},notice={},surface={dataset:{consoleTheme:'captain'}},panel={hidden:true},yes={addEventListener(t,fn){this.click=fn;}},no={addEventListener(t,fn){this.click=fn;}};
+  let stored='',reloads=0,questions=0;
+  const document={querySelectorAll:()=>[{type:'text',value:text,getClientRects:()=>[{}]}],get cookie(){return stored;},set cookie(v){if(cookies)stored=v.split(';')[0];}};
+  runInNewContext(script,{$:id=>id==='console-appearance'?select:id==='console-surface'?surface:id==='appearance-confirm'?panel:id==='appearance-continue'?yes:id==='appearance-cancel'?no:notice,workBusy:busy,document,window:{confirm(){questions++;return confirm;}},location:{protocol:'https:',reload(){reloads++;}}});
+  select.value='admiral';select.change();if(!panel.hidden){questions++;(confirm?yes:no).click();}return {select,notice,stored,reloads,questions};
+ }
+ assert.equal(fixture().reloads,1);assert.equal(fixture().stored,'PicardAppearance=admiral');
+ assert.equal(fixture({busy:true}).reloads,0);
+ assert.equal(fixture({text:'unsaved',confirm:false}).reloads,0);
+ assert.equal(fixture({text:'unsaved',confirm:false}).stored,'');
+ assert.equal(fixture({text:'unsaved'}).questions,1);
+ assert.equal(fixture({cookies:false}).reloads,0);
+});
+
+test('Captain preserves Admiral form, navigation and accessibility contracts',()=>{
+ const contracts=html=>[...html.replace(/<script>[\s\S]*?<\/script>|<style>[\s\S]*?<\/style>/g,'').matchAll(/<(button|input|textarea|select|form|label|a)\b([^>]*)>/g)].map(([,tag,attrs])=>{
+  // Styling and placement may differ; control bindings and safety attributes may not.
+  const attributes=[...attrs.matchAll(/([\w:-]+)(?:="([^"]*)")?/g)].filter(([,name])=>name!=='class'&&name!=='style').map(([,name,value])=>[name,value??true]).sort(([a],[b])=>a.localeCompare(b));
+  return JSON.stringify([tag,attributes]);
+ }).sort();
+ assert.deepEqual(contracts(captain),contracts(standard));
 });

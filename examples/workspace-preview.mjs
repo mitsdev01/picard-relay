@@ -25,22 +25,23 @@ let signedIn=true,dispatching=false;
 let updateState={v:1,enabled:true,state:'idle',requestedAt:null,finishedAt:null,retryAt:null};
 const previewTheme=process.env.PICARD_PREVIEW_THEME??'standard';
 if(!['standard','captain'].includes(previewTheme))throw Error('PICARD_PREVIEW_THEME must be standard or captain.');
-const html=admissionConsoleHtml(CONSOLE_HTML,{activationEnabled:true,workspaceEnabled:true,theme:previewTheme})
+const previewHtml=theme=>admissionConsoleHtml(CONSOLE_HTML,{activationEnabled:true,workspaceEnabled:true,theme})
  .replace('</style>','.preview-banner{position:relative;z-index:3;padding:9px 24px;border-bottom:1px solid #303b3f;color:#dec387;font:13px system-ui}</style>')
  .replace('<body>','<body><div class="preview-banner">Local v1 preview · synthetic answers · no external AI calls</div>');
-const handler=createConsoleHandler({enabled:true,html,recognition,origins:['https://127.0.0.1:'+port],updates:{status:()=>updateState,request:()=>{updateState={v:1,enabled:true,state:'checking',requestedAt:Date.now(),finishedAt:null,retryAt:null};setTimeout(()=>{updateState={...updateState,state:'up_to_date',finishedAt:Date.now()};},1500);return updateState;}},auth:{readPublicState:()=>({enrolled:true}),authenticate:()=>signedIn,logout:()=>{signedIn=false;return true;},login:()=>{signedIn=true;return {token:fixtureToken,expiresAt:Date.now()+3600000};}},getSnapshot:()=>consoleSnapshot({serviceReady:true,resultRecoveryReady:true,providerReady:true,acceptingNewWork:true,draining:false,blockingCode:'ready'},fixture.store.relay.scopedStats({ownerId:fixture.binding.ownerId}),new Date(),'owner',{v:1,scope:'vm',observedAtMs:Date.now(),cpuPercent:vmCpu,memoryUsedBytes:384*1048576,memoryTotalBytes:1024*1048576,relayMemoryBytes:48*1048576}),getRecentJobs:query=>fixture.store.relay.recentJobs({...query,ownerId:fixture.binding.ownerId})});
+const html=previewHtml(previewTheme),htmlThemes={admiral:previewHtml('standard'),captain:previewHtml('captain')};
+const handler=createConsoleHandler({enabled:true,html,htmlThemes,recognition,origins:['https://127.0.0.1:'+port],updates:{status:()=>updateState,request:()=>{updateState={v:1,enabled:true,state:'checking',requestedAt:Date.now(),finishedAt:null,retryAt:null};setTimeout(()=>{updateState={...updateState,state:'up_to_date',finishedAt:Date.now()};},1500);return updateState;}},auth:{readPublicState:()=>({enrolled:true}),authenticate:()=>signedIn,logout:()=>{signedIn=false;return true;},login:()=>{signedIn=true;return {token:fixtureToken,expiresAt:Date.now()+3600000};}},getSnapshot:()=>consoleSnapshot({serviceReady:true,resultRecoveryReady:true,providerReady:true,acceptingNewWork:true,draining:false,blockingCode:'ready'},fixture.store.relay.scopedStats({ownerId:fixture.binding.ownerId}),new Date(),'owner',{v:1,scope:'vm',observedAtMs:Date.now(),cpuPercent:vmCpu,memoryUsedBytes:384*1048576,memoryTotalBytes:1024*1048576,relayMemoryBytes:48*1048576}),getRecentJobs:query=>fixture.store.relay.recentJobs({...query,ownerId:fixture.binding.ownerId})});
 const server=createServer(async(req,res)=>{
  if(req.url.startsWith('/workspace/')){
   if(!signedIn){res.writeHead(401,{'Content-Type':'application/json'});res.end('{"error":"auth_failed"}');return;}
   const oldHost=req.headers.host,oldOrigin=req.headers.origin;
   if(oldHost!=='127.0.0.1:'+port||oldOrigin!==undefined&&oldOrigin!=='http://127.0.0.1:'+port){res.writeHead(403);res.end();return;}
-  req.headers.host='fixture.invalid';req.headers.origin=fixtureOrigin;req.headers.cookie='__Host-PicardSession='+fixtureToken;
+  req.headers.host='fixture.invalid';req.headers.origin=fixtureOrigin;req.headers.cookie=[...(req.headers.cookie??'').split(';').filter(s=>s.trim()&&!s.trim().startsWith('__Host-PicardSession=')),'__Host-PicardSession='+fixtureToken].join('; ');
   if(await fixture.handler(req,res))return;
  }
  // Production handlers retain their HTTPS-only origin contract. The preview
  // supplies a local proxy shim without changing the shipped runtime.
  if(req.headers.origin==='http://127.0.0.1:'+port)req.headers.origin='https://127.0.0.1:'+port;
- req.headers.cookie='__Host-PicardSession='+fixtureToken;
+ req.headers.cookie=[...(req.headers.cookie??'').split(';').filter(s=>s.trim()&&!s.trim().startsWith('__Host-PicardSession=')),'__Host-PicardSession='+fixtureToken].join('; ');
  if(!await handler(req,res)){res.writeHead(404);res.end();}
 });
 const timer=setInterval(async()=>{if(dispatching)return;dispatching=true;try{await fixture.dispatcher.runOnce();}finally{dispatching=false;}},1000);

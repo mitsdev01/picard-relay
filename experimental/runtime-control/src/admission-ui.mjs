@@ -57,7 +57,8 @@ export function workspaceConsoleHtml(base,{theme='standard'}={}){
  replace('aria-label="Documentation and account" title="Documentation and account"','aria-label="Settings" title="Settings"');
  replace('<button class="logout"','<button id="walkthrough-replay" type="button" hidden>Replay walkthrough</button><button class="logout"');
  replace(' showGroq(data);'," showGroq(data);$('walkthrough-replay').hidden=false;if(!workConfigAttempted)void workLoadConfig().catch(()=>{});else renderTraining();");
- replace('</style>',WORKSPACE_STYLE+'\n</style>');
+ replace('<button id="walkthrough-replay"','<label class="appearance-choice" for="console-appearance">Appearance<select id="console-appearance"><option value="admiral">Admiral</option><option value="captain">Captain</option></select></label><p id="appearance-notice" role="status"></p><div id="appearance-confirm" hidden><button id="appearance-continue" type="button">Discard text and switch</button><button id="appearance-cancel" type="button">Keep editing</button></div><button id="walkthrough-replay"');
+ replace('</style>',WORKSPACE_STYLE+'\n.appearance-choice{display:grid;gap:6px;padding:10px 12px;font-size:12px}.appearance-choice select{width:100%;min-height:36px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px}#appearance-notice:empty{display:none}#appearance-notice{max-width:230px;padding:8px 12px;font-size:12px}\n</style>');
  replace('motion();void boot();',WORKSPACE_SCRIPT()+'\nmotion();void boot();');
  return theme==='captain'?captainConsoleHtml(base):base;
 }
@@ -122,6 +123,29 @@ let workConfigAttempted=false,workConfigFlight=null,workGraduated=false,workProg
 let workConfig=null,workDraft=null,workResult=null,workRef=null,workBusy=false,workGeneration=0,workTimer=null,workRead=null,workFresh=false,workDraftId=null,workSubmissionUnknown=false;
 const workControllers=new Set(),workDownloads=new Set();
 const workFields=['request-title','request-text','request-context','request-task'];
+const appearance=$('console-appearance');
+const currentAppearance=$('console-surface').dataset.consoleTheme==='captain'?'captain':'admiral';
+appearance.value=currentAppearance;
+let pendingAppearance=null;
+const applyAppearance=next=>{
+ if(workBusy){$('appearance-notice').textContent='Wait for the current request operation to finish before switching appearance.';return;}
+ document.cookie='PicardAppearance='+next+'; Path=/; Max-Age=31536000; SameSite=Strict'+(location.protocol==='https:'?'; Secure':'');
+ const preferences=document.cookie.split(';').map(s=>s.trim()).filter(s=>s.startsWith('PicardAppearance='));
+ if(preferences.length!==1||preferences[0]!=='PicardAppearance='+next){$('appearance-notice').textContent='Allow site preference cookies to switch appearance.';return;}
+ location.reload();
+};
+appearance.addEventListener('change',()=>{
+ const next=appearance.value;appearance.value=currentAppearance;
+ pendingAppearance=null;$('appearance-confirm').hidden=true;$('appearance-notice').textContent='';
+ if(!['admiral','captain'].includes(next)||next===currentAppearance)return;
+ if(workBusy){$('appearance-notice').textContent='Wait for the current request operation to finish before switching appearance.';return;}
+ const unsaved=[...document.querySelectorAll('input,textarea')].some(el=>!el.disabled&&el.type!=='hidden'&&el.type!=='checkbox'&&el.type!=='radio'&&el.getClientRects().length&&el.value);
+ if(unsaved){pendingAppearance=next;$('appearance-notice').textContent='Switching reloads this page and discards unsaved text. Saved requests and results are kept.';$('appearance-confirm').hidden=false;return;}
+ applyAppearance(next);
+});
+$('appearance-continue').addEventListener('click',()=>{if(pendingAppearance)applyAppearance(pendingAppearance);});
+$('appearance-cancel').addEventListener('click',()=>{pendingAppearance=null;$('appearance-confirm').hidden=true;$('appearance-notice').textContent='';});
+
 function stopWorkspacePoll(){clearTimeout(workTimer);workTimer=null;}
 function workNotice(text,warn=false){$('request-notice').textContent=text;$('request-notice').dataset.tone=warn?'warn':'';}
 // Ranks teach the interface; they never grant provider or execution authority.
