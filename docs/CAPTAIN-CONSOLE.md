@@ -108,3 +108,36 @@ action. The sidebar has a larger insignia and rank-aware decorative pips. The
 status diagram sits beside readiness details on wide screens, and the rank bar
 is segmented. All five views fit at 320, 390, 1024 and 1440 CSS pixels in the
 local browser check; an unfinished draft survived the five-click space toggle.
+
+## Admiral and Captain appearance
+
+The Settings (ellipsis) menu offers **Appearance: Admiral / Captain** in both
+workspace presentations, including the sign-in page. Admiral is the standard
+upstream presentation bundled in this installed release; Captain is this fork's
+presentation. Both share the same relay, authentication, requests, saved results
+and earned ranks. Appearance names do not grant a rank or permission.
+
+The fork defaults to Captain. A browser can remember its choice for one year in
+`PicardAppearance`, a non-secret, SameSite=Strict preference cookie (Secure on
+HTTPS). Only the exact values `admiral` and `captain` select a renderer. Invalid,
+duplicate or oversized cookies use the configured default. This preference
+never authenticates a request. No new route or remote asset is introduced;
+each document receives its own existing size validation and CSP hashes.
+
+Switching reloads the current URL, retaining its view/result reference and the
+existing session. Visible unsaved input requires confirmation; switching is
+blocked while a workspace operation is in progress. Saved work stays in the
+ledger. Form text and passwords are never placed in preference storage. If the
+browser cannot save the preference, the page reports that instead of reloading.
+Space mode follows the existing reload behavior; appearance does not change
+Stealth or motion preferences. Captain retains its own login/door presentation.
+
+Maintain the standard renderer as the upstream baseline and keep Captain's
+transform in `tools/console-theme/captain.mjs`. Test both documents and their
+CSP/authentication behavior when merging upstream. The selector does not fetch
+new upstream code or switch deployments. Local preview exercises both renderers
+regardless of which `PICARD_PREVIEW_THEME` is selected as its default.
+
+The theme regression suite also compares form controls, navigation bindings and
+accessibility attributes across both presentations. This runs in fork release
+qualification and signing, alongside the shared-script and generated-theme checks.

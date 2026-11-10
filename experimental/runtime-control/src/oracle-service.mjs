@@ -246,7 +246,21 @@ export function createContributionRecognition({login,lookup=fetchContributorCred
 
 // Finite runtime ceiling; theme tests reserve separate upstream-growth headroom.
 export const MAX_CONSOLE_DOCUMENT_BYTES=256*1024;
-export function createConsoleHandler({enabled=false,html='',getSnapshot,getRecentJobs,auth=null,origins=[],updates=createUpdateRequestBridge(),groqReplacement=null,recognition=''}={}){
+export function createConsoleHandler(options={}){
+ const {enabled=false,html='',htmlThemes=null,getSnapshot,getRecentJobs,auth=null,origins=[],updates=createUpdateRequestBridge(),groqReplacement=null,recognition=''}=options;
+ // Presentation preference only: never a session or an authorization signal.
+ if(htmlThemes!==null){
+  if(!htmlThemes||Object.keys(htmlThemes).sort().join(',')!=='admiral,captain')throw Error('console_themes_invalid');
+  const handlers=Object.fromEntries(Object.entries(htmlThemes).map(([name,document])=>[name,createConsoleHandler({...options,updates,html:document,htmlThemes:null})]));
+  const fallback=createConsoleHandler({...options,updates,htmlThemes:null});
+  return (req,res)=>{
+   const cookie=req.headers.cookie;
+   const values=typeof cookie==='string'&&cookie.length<=4096?cookie.split(';').map(s=>s.trim()).filter(s=>s.startsWith('PicardAppearance=')):[];
+   const name=values.length===1?values[0].slice('PicardAppearance='.length):'';
+   return (Object.hasOwn(handlers,name)?handlers[name]:fallback)(req,res);
+  };
+ }
+
  if(typeof html!=='string'||Buffer.byteLength(html)>MAX_CONSOLE_DOCUMENT_BYTES)throw Error('console_document_invalid');
  const hash=s=>"'sha256-"+createHash('sha256').update(s).digest('base64')+"'";
  const scripts=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>hash(m[1]));
@@ -646,7 +660,7 @@ export async function startOracleService(config,assistantAdapter,{intervalMs=100
  // Its console must use that same owner scope, not the legacy catalogue task.
  const consoleScope={ownerId:config.ownerId,allowedTaskId:config.admissionEnabled===true&&config.admissionReusableBoardEnabled===true?'':config.allowedTaskId??''};
  const recognition=config.consoleEnabled===true&&config.recognitionLogin?createContributionRecognition({login:config.recognitionLogin}):null;
- const consoleHandler=createConsoleHandler({enabled:config.consoleEnabled===true,html:admission?.html??CONSOLE_HTML,auth:consoleAuth,origins:config.consoleOrigins,recognition:recognition?.read??config.recognition,updates:createUpdateRequestBridge({enabled:process.env.BRIDGE_OWNER_UPDATES_ENABLED==='true'}),groqReplacement:admission?.groqReplacement,getSnapshot:()=>consoleSnapshot(control.health(),store.scopedStats(consoleScope),new Date(),consoleScope.allowedTaskId?'task':'owner',readResources(),admission?.groqKeyExpiresAt),getRecentJobs:query=>store.recentJobs({...query,...consoleScope})});
+ const consoleHandler=createConsoleHandler({enabled:config.consoleEnabled===true,html:admission?.html??CONSOLE_HTML,htmlThemes:admission?.htmlThemes??null,auth:consoleAuth,origins:config.consoleOrigins,recognition:recognition?.read??config.recognition,updates:createUpdateRequestBridge({enabled:process.env.BRIDGE_OWNER_UPDATES_ENABLED==='true'}),groqReplacement:admission?.groqReplacement,getSnapshot:()=>consoleSnapshot(control.health(),store.scopedStats(consoleScope),new Date(),consoleScope.allowedTaskId?'task':'owner',readResources(),admission?.groqKeyExpiresAt),getRecentJobs:query=>store.recentJobs({...query,...consoleScope})});
  const server=createServer(async(req,res)=>{try{
   // TLS/auth for the opt-in console terminate at the approved reverse proxy.
   if(admission&&await admission.handler(req,res))return;
