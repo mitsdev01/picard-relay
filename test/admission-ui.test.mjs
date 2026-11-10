@@ -11,7 +11,7 @@ function harness({cataloguePatch={},savedBody='SYNTHETIC_SAVED_RESULT <img src=x
  const ref=requestRef,inputSha256=inputHash;
  let authenticated=true,lost=null,unavailable=false,job='available',hold=null,empty=false,legacyReview=false;
  const timers=new Map(),requests=[],events={document:{},window:{}},els=new Map(),heldReads=[];let seq=0;
- function element(tagName=''){return {tagName,textContent:'',children:[],value:'',hidden:true,disabled:false,dataset:{},attrs:{},listeners:{},className:'',classList:{items:new Set(),toggle(k,v){v?this.items.add(k):this.items.delete(k);}},setAttribute(k,v){this.attrs[k]=v;},append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;this.textContent='';},addEventListener(k,v){this.listeners[k]=v;},focus(){},animate(){return {cancel(){}}}};}
+ function element(tagName=''){return {tagName,textContent:'',children:[],value:'',hidden:true,disabled:false,dataset:{},attrs:{},listeners:{},className:'',classList:{items:new Set(),toggle(k,v){v?this.items.add(k):this.items.delete(k);}},removeAttribute(k){delete this.attrs[k];delete this[k];},setAttribute(k,v){this.attrs[k]=v;},append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=nodes;this.textContent='';},addEventListener(k,v){this.listeners[k]=v;},focus(){},animate(){return {cancel(){}}}};}
  for(const [,id] of html.matchAll(/id="([^"]+)"/g))els.set(id,element());
  const add=(kind,name,fn)=>{(events[kind][name]??=[]).push(fn);};
  const document={visibilityState:'visible',getElementById:id=>{assert.ok(els.has(id),id);return els.get(id);},createElement:element,addEventListener:(n,fn)=>add('document',n,fn)};

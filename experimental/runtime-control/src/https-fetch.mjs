@@ -126,3 +126,58 @@ export async function fetchContributorCredits(login, { signal } = {}) {
     [kind, await readRecognitionIssuePage(path, deadline)]));
   return verifyContributorCredits(login, Object.fromEntries(results));
 }
+
+// Advisory public-source observation only. Never fetch a credential, artifact or
+// caller-selected URL; installation still uses the separately enrolled updater.
+const upstreamRepo='bmartynowicz/picard-relay', forkRepo='mitsdev01/picard-relay';
+const sourceSha=value=>typeof value==='string'&&/^[a-f0-9]{40}$/.test(value);
+export function readPublicSource(path,signal){
+ if(!/^repos\/(?:bmartynowicz|mitsdev01)\/picard-relay\/(?:git\/ref\/heads\/main|compare\/[a-f0-9]{40}\.\.\.[a-f0-9]{40}\?per_page=1&page=2)$/.test(path))return Promise.reject(Error('source_path_refused'));
+ return new Promise((resolve,reject)=>{
+  const req=https.get('https://api.github.com/'+path,{headers:{Accept:'application/vnd.github+json','User-Agent':'picard-upstream-notice'},signal,agent:false,rejectUnauthorized:true,maxHeaderSize:8192},async res=>{
+   try{
+    if(res.statusCode!==200)throw Error('source_unavailable');
+    let size=0;const chunks=[];
+    for await(const chunk of res){size+=chunk.length;if(size>512*1024)throw Error('source_oversized');chunks.push(chunk);}
+    resolve(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(Buffer.concat(chunks))));
+   }catch{res.destroy();reject(Error('source_unavailable'));}
+  });
+  req.once('error',()=>reject(Error('source_unavailable')));
+ });
+}
+export function createUpstreamNotice({read=readPublicSource,now=Date.now}={}){
+ const ttl=10*60*1000;
+ let record=null,attempt=null,pending=null,identity=null,failed=false;
+ function comparison(value){
+  if(!value||!['ahead','behind','identical','diverged'].includes(value.status)||!sourceSha(value.merge_base_commit?.sha)
+   ||![value.ahead_by,value.behind_by].every(n=>Number.isSafeInteger(n)&&n>=0))throw Error('comparison_invalid');
+  const a=value.ahead_by,b=value.behind_by;
+  if((a===0&&b===0?'identical':a===0?'behind':b===0?'ahead':'diverged')!==value.status)throw Error('comparison_inconsistent');
+  return value;
+ }
+ async function check(installed){
+  const signal=AbortSignal.timeout(10000);
+  const [upRef,forkRef]=await Promise.all([read('repos/'+upstreamRepo+'/git/ref/heads/main',signal),read('repos/'+forkRepo+'/git/ref/heads/main',signal)]);
+  const up=upRef?.object,fork=forkRef?.object;
+  if(upRef?.object?.type!=='commit'||forkRef?.object?.type!=='commit')throw Error('source_invalid');
+  if(!sourceSha(up?.sha)||!sourceSha(fork?.sha))throw Error('source_invalid');
+  // GitHub includes file patches only on the first page. We need ancestry
+  // counters and merge-base, not the (intentionally incomplete) commit list.
+  const compare=(base,head)=>read('repos/'+forkRepo+'/compare/'+base+'...'+head+'?per_page=1&page=2',signal).then(comparison);
+  const [installedUpstream,forkUpstream,deployment]=await Promise.all([compare(up.sha,installed),compare(up.sha,fork.sha),compare(installed,fork.sha)]);
+  if(!['ahead','identical'].includes(deployment.status))throw Error('installed_source_not_in_fork_main');
+  const upstreamPending=forkUpstream.behind_by>0;
+  const deploymentPending=deployment.ahead_by>0;
+  record={installed,fork:fork.sha,upstream:up.sha,incorporated:installedUpstream.merge_base_commit.sha,upstreamPending,deploymentPending,checkedAt:now()};
+ }
+ return {read(installed){
+  if(!sourceSha(installed))return {v:1,state:'unavailable',checkedAt:null};
+  if(identity!==installed){identity=installed;record=null;attempt=null;failed=false;}
+  if(!pending&&(attempt===null||now()-attempt>=ttl||now()<attempt)){
+   attempt=now();failed=false;
+   pending=check(installed).catch(()=>{failed=true;}).finally(()=>{pending=null;});
+  }
+  const current=record?.installed===installed?record:null;
+  return {v:1,state:pending?'checking':failed||!current?'unavailable':current.upstreamPending?'upstream_available':current.deploymentPending?'deployment_pending':'current',checkedAt:current?.checkedAt??null,...(current??{}),nextCheckAt:attempt+ttl};
+ }};
+}

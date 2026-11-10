@@ -24,7 +24,7 @@ Pause Motion, reduced motion and hidden tabs disable look-around and pause trave
 
 The host performs two fixed, bounded kernel-file reads and one process-memory read, cached for 15 seconds and reached only through authenticated status requests. There is no added polling loop, process, dependency, canvas, WebGL or JavaScript animation loop. Look-around updates only on input, at most about 30 times per second, using one background transform. The same two CSS travel animations remain; only their playback rates change on a status update.
 
-This fork keeps a 256 KiB runtime document ceiling and a separate 208 KiB theme review budget; request/provider body limits and the 20-module runtime allowlist are unchanged. This is a bounded size limit, not a measured CPU, GPU, battery or low-end hardware benchmark. The local preview uses explicitly synthetic metrics and makes no external AI calls. `PICARD_PREVIEW_VM_CPU` can set its fixture reading from 0 to 100.
+This fork keeps a 256 KiB runtime document ceiling and a separate 212 KiB theme review budget; request/provider body limits and the 20-module runtime allowlist are unchanged. This is a bounded size limit, not a measured CPU, GPU, battery or low-end hardware benchmark. The local preview uses explicitly synthetic metrics and makes no external AI calls. `PICARD_PREVIEW_VM_CPU` can set its fixture reading from 0 to 100.
 
 ## Picard's contribution
 

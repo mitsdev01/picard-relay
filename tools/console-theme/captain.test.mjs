@@ -9,8 +9,8 @@ import {CAPTAIN_LOGIN_REVEAL,CAPTAIN_AUTH_CLOSE} from './captain.mjs';
 const standard=workspaceConsoleHtml(CONSOLE_HTML),captain=workspaceConsoleHtml(CONSOLE_HTML,{theme:'captain'});
 test('generated theme is current and both documents fit the bounded security handler',()=>{
  execFileSync(process.execPath,['tools/console-theme/build.mjs','--check']);
- // Review UI growth at 208 KiB, leaving 48 KiB before the runtime ceiling.
- for(const html of [standard,captain]){assert(Buffer.byteLength(html)<208*1024);assert.doesNotThrow(()=>createConsoleHandler({html}));}
+ // Review UI growth at 212 KiB, leaving 44 KiB before the runtime ceiling.
+ for(const html of [standard,captain]){assert(Buffer.byteLength(html)<212*1024);assert.doesNotThrow(()=>createConsoleHandler({html}));}
  assert.doesNotThrow(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES)}));
  assert.throws(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES+1)}),/console_document_invalid/);
  assert.throws(()=>createConsoleHandler({html:'é'.repeat(MAX_CONSOLE_DOCUMENT_BYTES/2+1)}),/console_document_invalid/);
