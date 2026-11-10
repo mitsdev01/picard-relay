@@ -2,7 +2,20 @@
 
 The authenticated console has five views when finite admission is enabled. A host without that feature has four views and no Requests submission controls.
 
-The **Documentation ↗** link in the shared header opens the guide index in a new tab. It is available from every view and the sign-in screen, and leads to the quickstart, illustrations, limits, known work and AI-readable references. The current console stays open.
+The [cockpit tour](COCKPIT-TOUR.md) includes a 15-second recording and a quick
+control guide. Navigation is centered horizontally. Open the **…** menu beside
+Refresh for **Documentation ↗**, **Stealth mode**, motion controls and Sign out.
+Documentation opens the guide index in a new tab and is available on the sign-in
+screen.
+
+Choose **Stealth mode** or press **Alt+Shift+S** for a plain Work Console with a
+neutral title, sidebar on desktop, and motion turned off. Use the same control
+to return to Picard. The cockpit HUD shows the shortcut.
+
+Under **… → Auto stealth**, choose when the tab is hidden, after five minutes
+without a click, keystroke or scroll, or both. Auto stealth starts off. Your
+browser remembers the setting. Automatic entry stays on until you toggle it or
+reload. The same job and request data remain visible.
 
 | View | What to use it for |
 | --- | --- |
@@ -13,6 +26,49 @@ The **Documentation ↗** link in the shared header opens the guide index in a n
 | System | Inspect readable version, sequence, source commit, physical release fingerprint and dated updater activity. |
 
 ![Choose new work or recover a saved result](images/using-picard.svg)
+
+## Suggest a feature or report a bug
+
+Open **… → Feedback** and choose a type. In cockpit mode, right-click an
+exposed part of the starfield to start a bug report. The menu works with a
+keyboard or touch.
+
+Enter a title and details, choose **Preview**, then **Copy draft**. Open the
+GitHub issue form and paste the first line as the title and the rest as the
+description. GitHub issues are public. The preview contains only your typed
+text and the feedback type. Closing it clears the draft.
+
+## Earn Kills and Captures
+
+**Kills** recognize confirmed bug reports and merged bug fixes. **Captures**
+recognize accepted feature requests. Earned counts appear beside the rank in
+the signed-in console, including in cockpit mode. Recognition is separate
+from rank progress.
+
+For maintainers and self-hosted operators:
+
+1. Apply `picard:kill` to a confirmed bug issue or a merged bug-fix PR. Apply
+   `picard:capture` to an accepted feature issue. Credit goes to the GitHub
+   author. Award one label per item and choose one record for the same
+   contribution when a report and fix share an author.
+2. Set `BRIDGE_CONTRIBUTION_GITHUB_LOGIN` to the credited GitHub username in
+   the relay's administrator-managed environment, then restart the relay once.
+   This enables automatic recognition for that account.
+3. On the next signed-in status read, the relay checks the two labels in the
+   public Picard Relay repository. It checks at most once every ten minutes
+   while the console is in use. The existing console refresh picks up the
+   result. Adding or removing a label updates the counts after a complete
+   check. Empty credits hide the distinction.
+
+Automatic recognition uses two bounded public HTTPS reads to `api.github.com`
+per check. The owner status response contains only the display counts. A failed
+check preserves the last verified counts in memory. After a restart, the first
+complete check supplies the counts again.
+
+For manual recognition, leave `BRIDGE_CONTRIBUTION_GITHUB_LOGIN` unset and run
+`node scripts/contributor-recognition.mjs <github-username>` with GitHub CLI
+from a checkout. Set `BRIDGE_CONTRIBUTION_CREDITS` to the resulting JSON and
+restart the relay to apply it. A configured GitHub login takes precedence.
 
 ## Legacy finite picker: new work versus recovery
 
@@ -32,6 +88,16 @@ Overview includes failed jobs; Running combines claimed and invoking jobs. Groq 
 
 ## Learn the workflow and earn ranks
 
+On Overview, **Your progress** opens the first-request walkthrough until you
+review a saved answer. Choose **Create request → A checklist** to turn your own
+notes into a practical first result. Edit the brief, review the exact input,
+and approve one call when ready. Read the saved answer and accept it or request
+changes to complete the walkthrough.
+
+**Rank guide** lists the requirements and unlocks. To see the walkthrough again,
+open **… (Settings) → Replay walkthrough**. Replaying opens Progress and keeps
+any current draft.
+
 The console keeps the spinning insignia, rolling counters and charcoal/brass colors. Your progress shows the next useful action. The brass insignia has shallow 3D edges and a recessed center; Ensign adds polish and Lieutenant adds brighter facets. Two inline SVG faces and five fixed edge planes share one CSS rotation. No images, rendering loop, new timers or libraries are loaded. Pause motion, reduced motion and hidden tabs still stop the spin.
 
 | Rank | Earn it by | Interface tools |
@@ -44,9 +110,30 @@ Existing owned results/reviews count immediately. Reviewing an old answer can co
 
 Progress comes from the existing durable ledger and output-bound reviews, with no new schema or tracking store. A single indexed review lookup augments the existing workspace configuration response. The console reads it once on sign-in and coalesces concurrent loads; subsequent refreshes reuse the existing Requests polling. Unverifiable/stale progress earns no new rank or unlock. Previously verified achievements remain for the authenticated page session without extra polling; live readiness and exact-call approval still require fresh observations. Authentication loss clears rank details and logo decorations.
 
-Progress leads Overview, above live readiness. Jobs, Groq and System offer the next useful action: setup, an unfinished draft/request, result review or new work. Continuing a draft preserves it. Navigation keeps a stable shape, lights the active number and uses a crisp press response. The raised sidebar and recessed dividers use static shading. Sign-in has a brief fade; pause/reduced motion disable transitions. The Refresh button includes a compact live/paused/stale/offline indicator; hover/accessibility text includes the full cadence or failure explanation. Scope and privacy details are in the small information disclosure. There are no new libraries, external assets or timers. This is a source candidate; installation and owner acceptance remain separate.
+Progress leads Overview, above live readiness. Jobs, Groq and System offer the
+next useful action: setup, an unfinished draft/request, result review or new
+work. Continuing a draft preserves it. The raised horizontal control rail keeps
+a stable shape, lights the active number and uses static shading and recessed
+dividers. Sign-in has a brief fade; pause/reduced motion disable transitions.
+The Refresh button includes a compact live/paused/stale/offline indicator;
+hover/accessibility text includes the full cadence or failure explanation.
+Scope and privacy details are in the small information disclosure. There are
+no new libraries, external assets or timers. The walkthrough records v1.0.33;
+the latest recorded enrolled-host checks cover v1.0.34. Other installations and
+owner acceptance remain separate.
 
-The charcoal workspace panel always has the same floating layout. Activate the insignia five times to toggle only the pixel stars behind it; navigation stays opaque. Consecutive clicks/Enter/Space activations must be no more than five seconds apart; another five switch it off. Two sparse CSS layers drift/glimmer slowly behind the panel, with no canvas, render loop, external image or network request. Pause motion, reduced motion and hidden tabs stop the effects. The preference lasts for the current page and resets on reload.
+Activate the insignia five times to switch between the standard console and
+the optional space cockpit. Consecutive clicks/Enter/Space activations must be
+no more than five seconds apart; another five switch it off. Two SVG planes
+move 128 round stars slowly behind the HUD. Navigation opens an opaque lower
+reading deck while readiness and projected activity remain visible above it.
+Click exposed space, choose Minimize panel or press Escape to retract the deck
+without clearing the draft or selected result. Clicks inside the deck preserve
+it. Pause motion and hidden tabs pause animation; reduced motion leaves a static
+scene. Cockpit/stars reset on reload. See [Owner features](OWNER-FEATURES.md) for
+earned ranks beyond Lieutenant and implementation details. Current releases
+also project whole-VM CPU, reveal memory details on selection and support
+restrained background-only look-around. See [Flight instruments](FLIGHT-INSTRUMENTS.md).
 
 ## Navigation and history
 
@@ -74,6 +161,10 @@ The workspace can recover valid results for the configured owner across tasks, i
 
 The original generated body and result SHA-256 remain unchanged. Review history is append-only with revision checks. Picard reviews are local assessments, not task-board acceptance or messages to another system. Exported Markdown, individual fenced code blocks and JSON handoffs are inert files. Measured usage and billed cost are explicitly unknown.
 
-## Next owner-feature candidate
+## Updates, earned work and the cockpit
 
-The [owner-feature guide](OWNER-FEATURES.md) describes the new update-check button, owner-scoped accepted-work ranks, hidden locked controls and brighter optional space window. The updater bridge is separately enrolled host support and is disabled by default. This source candidate is not a claim of production activation.
+The [owner-feature guide](OWNER-FEATURES.md) describes the update-check button,
+owner-scoped accepted-work ranks, hidden locked controls and optional space
+window. The updater bridge needs separate host enrollment. The [visual tour](COCKPIT-TOUR.md)
+shows the recorded v1.0.33 interface; [Status](STATUS.md) records later v1.0.34
+checks separately.

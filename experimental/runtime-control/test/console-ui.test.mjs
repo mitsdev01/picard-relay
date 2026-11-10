@@ -3,22 +3,212 @@ import {CONSOLE_HTML as html} from '../src/oracle-service.mjs';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 const script=html.match(/<script>\n([\s\S]*?)<\/script>/)[1],style=html.match(/<style>([\s\S]*?)<\/style>/)[1];
-assert.equal(createHash('sha256').update(script).digest('hex'),"3269d9a86d90400d0befa18b31ee8dc31c1e3884ce8f3c6a99b36271d933f80d");
+assert.equal(createHash('sha256').update(script).digest('hex'),"74302e84109539c53a047c8b01e37a16669fa363281b8af7213d22b47aa99712");
 assert.equal(createHash('sha256').update(html.match(/id="logo" aria-hidden="true">([\s\S]*?)<\/pre>/)[1]).digest('hex'),"632fc5b24f76003e80bc7299ba9e404b3d8e01f7ab31563a492ae9b6421a0ca4");
-assert.ok(!/localStorage|sessionStorage|document\.cookie|innerHTML|setInterval/.test(script));assert.ok(!/src=|@import|url\(/i.test(html.replace(/url\(#picard-metal-(?:face|recess)\)/g,'')));assert.deepEqual([...html.matchAll(/href="([^"]+)"/g)].map(match=>match[1]),['https://github.com/bmartynowicz/picard-relay/blob/main/docs/README.md']);assert.match(html,/<a id="documentation"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*referrerpolicy="no-referrer"/);assert.ok(html.includes('<div id="private" hidden>'));assert.ok(html.includes('prefers-reduced-motion'));assert.ok(!html.includes('NCC-1701'));
-for(const id of ['setup-code','new-password','confirm-password','login-password'])assert.match(html,new RegExp('id="'+id+'" type="password"'));
+const noDisplayStorage=script.replace(/localStorage\.(?:getItem\(stealthPreference\)|setItem\(stealthPreference,String\(stealthFlags\)\))/g,'');
+assert.match(script,/const stealthPreference='picard:stealth';/);
+assert.ok(!/localStorage|sessionStorage|document\.cookie|innerHTML|setInterval/.test(noDisplayStorage));assert.ok(!/src=|@import|url\(/i.test(html.replace(/url\(#picard-metal-(?:face|recess)\)/g,'')));assert.deepEqual([...html.matchAll(/href="([^"]+)"/g)].map(match=>match[1]),['https://github.com/bmartynowicz/picard-relay/blob/main/docs/README.md','https://github.com/bmartynowicz/picard-relay/blob/main/docs/OPERATIONS.md#replace-a-groq-key','https://github.com/bmartynowicz/picard-relay/issues/new','https://console.groq.com/keys']);assert.match(html,/<a id="documentation"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*referrerpolicy="no-referrer"/);assert.ok(html.includes('<div id="private" hidden>'));assert.ok(html.includes('prefers-reduced-motion'));assert.ok(!html.includes('NCC-1701'));
+for(const id of ['setup-code','new-password','confirm-password','login-password','replace-groq-secret'])assert.match(html,new RegExp('id="'+id+'" type="password"'));
 const health={v:1,observedAt:'2026-10-30T16:00:00Z',service:{ready:true,providerReady:false,resultRecoveryReady:true,acceptingNewWork:false,draining:false},jobs:{queued:0,invoking:0,completed:2,uncertain:0},release:{hash:'a'.repeat(64),version:null},updater:{state:'unknown'}};
 const ok=body=>({ok:true,status:200,json:async()=>body}),bad=(status,error)=>({ok:false,status,json:async()=>({error})});
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
-function harness(handler,{jobsHandler,clock=Date}={}){
+function harness(handler,{jobsHandler,clock=Date,storage}={}){
  const animations=[];const element=()=>({_text:'',get textContent(){return this._text+this.children.map(n=>n.textContent).join('')},set textContent(v){this._text=String(v);this.children=[]},children:[],value:'',className:'',hidden:true,disabled:false,dataset:{},listeners:{},attrs:{},classList:{items:new Set(),toggle(n,v){v?this.items.add(n):this.items.delete(n)}},setAttribute(n,v){this.attrs[n]=v},addEventListener(n,fn){this.listeners[n]=fn},append(...nodes){this.children.push(...nodes)},replaceChildren(...nodes){this._text='';this.children=nodes},animate(frames,options){const a={frames,options,cancelled:false,cancel(){this.cancelled=true;this.oncancel?.()}};animations.push(a);return a}});
  const els=new Map([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,element()]));
+ const copied=[];
+ for(const id of ['feedback-dialog','replace-groq-dialog']){
+  const dialog=els.get(id);
+  dialog.showModal=()=>{dialog.open=true;};
+  dialog.close=()=>{dialog.open=false;dialog.listeners.close?.();};
+ }
+ const starAnimations=['space-plane-0','space-plane-1'].map(id=>{const a={playbackRate:1,currentTime:1234,changes:[],updatePlaybackRate(rate){this.playbackRate=rate;this.changes.push(rate);}};els.get(id).getAnimations=()=>[a];return a;});
+ for(const el of els.values()){el.style={values:new Map(),setProperty(name,value){this.values.set(name,value)}};el.getBoundingClientRect=()=>({left:0,top:0,width:1200,height:800});}
  const dl={},wl={},ml={},pref={matches:false,addEventListener:(n,fn)=>ml[n]=fn};
  const document={visibilityState:'visible',getElementById:id=>{assert.ok(els.has(id));return els.get(id)},createElement:()=>element(),addEventListener:(n,fn)=>dl[n]=fn};
- const window={matchMedia:()=>pref,addEventListener:(n,fn)=>wl[n]=fn};let count=0;const requests=[],timers=new Map();
- vm.runInNewContext(script,{document,window,TextEncoder,AbortController,Date:clock,queueMicrotask,setTimeout:fn=>{timers.set(++count,fn);return count},clearTimeout:id=>timers.delete(id),fetch:async(path,options)=>{assert.equal(options.credentials,'same-origin');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');assert.ok(['/auth/state','/auth/setup','/auth/login','/auth/logout','/status','/updates'].includes(path)||path==='/jobs'||path.startsWith('/jobs?cursor='));if(options.method==='POST')assert.equal(options.headers['Content-Type'],'application/json');requests.push({path,options});return path.startsWith('/jobs')?(jobsHandler?jobsHandler(path,options):ok({v:1,rows:[],nextCursor:null,observedAt:health.observedAt})):handler(path,options)}});
- return {get:id=>els.get(id),els,requests,timers,wl,dl,ml,pref,document,animations,async submit(id){await els.get(id).listeners.submit({preventDefault(){}})},async click(id){await els.get(id).listeners.click()}};
+ const window={matchMedia:()=>pref,addEventListener:(n,fn)=>wl[n]=fn};
+ const navigator={clipboard:{writeText:async text=>{copied.push(text);}}};
+ let count=0;const requests=[],timers=new Map();
+ vm.runInNewContext(script,{document,window,navigator,localStorage:storage,TextEncoder,AbortController,crypto:{randomUUID:()=>replacementId},Date:clock,queueMicrotask,setTimeout:fn=>{timers.set(++count,fn);return count},clearTimeout:id=>timers.delete(id),fetch:async(path,options)=>{assert.equal(options.credentials,'same-origin');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');assert.ok(['/auth/state','/auth/setup','/auth/login','/auth/logout','/status','/updates','/groq/key'].includes(path)||path==='/jobs'||path.startsWith('/jobs?cursor='));if(options.method==='POST')assert.equal(options.headers['Content-Type'],'application/json');requests.push({path,options});return path.startsWith('/jobs')?(jobsHandler?jobsHandler(path,options):ok({v:1,rows:[],nextCursor:null,observedAt:health.observedAt})):handler(path,options)}});
+ return {get:id=>els.get(id),els,requests,timers,wl,dl,ml,pref,document,animations,starAnimations,copied,async submit(id){await els.get(id).listeners.submit({preventDefault(){}})},async click(id){await els.get(id).listeners.click()}};
 }
+const feedbackFlow=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok(health));
+await flush();
+assert.equal(feedbackFlow.get('recognition').hidden,true);
+assert.equal(feedbackFlow.get('groq-key').hidden,true);
+assert.equal(feedbackFlow.get('replace-groq-row').hidden,true);
+
+const displayPrefs=new Map(),displayStorage={getItem:key=>displayPrefs.get(key),setItem:(key,value)=>displayPrefs.set(key,value)};
+const displayStatus=async path=>path==='/auth/state'?ok({enrolled:true}):ok(health);
+const stealthFlow=harness(displayStatus,{storage:displayStorage});
+await flush();
+for(let i=0;i<5;i++)await stealthFlow.click('logo-wrap');
+assert.equal(stealthFlow.get('console-surface').dataset.starfield,'true');
+const beforeStealthReads=stealthFlow.requests.length;
+await stealthFlow.click('stealth-mode');
+assert.equal(stealthFlow.document.title,'Work Console');
+assert.equal(stealthFlow.get('brand-name').textContent,'Work Console');
+assert.equal(stealthFlow.get('stealth-mode').attrs['aria-pressed'],'true');
+assert.equal(stealthFlow.get('console-surface').dataset.starfield,'false');
+assert.equal(stealthFlow.get('console-surface').dataset.motion,'off');
+assert.equal(stealthFlow.get('hud-instruments').hidden,true);
+assert.equal(stealthFlow.requests.length,beforeStealthReads);
+assert.deepEqual([...displayPrefs],[['picard:stealth','1']]);
+const restoredStealth=harness(displayStatus,{storage:displayStorage});
+await flush();
+assert.equal(restoredStealth.document.title,'Work Console');
+assert.equal(restoredStealth.get('stealth-mode').attrs['aria-pressed'],'true');
+assert.equal(restoredStealth.get('stealth-auto').value,'0');
+stealthFlow.pref.matches=true;stealthFlow.ml.change();
+await stealthFlow.click('stealth-mode');
+assert.equal(stealthFlow.document.title,'Picard Relay — Console');
+assert.equal(stealthFlow.get('console-surface').dataset.starfield,'true');
+assert.equal(stealthFlow.get('console-surface').dataset.motion,'off');
+assert.deepEqual([...displayPrefs],[['picard:stealth','0']]);
+const shortcut={code:'KeyS',altKey:true,shiftKey:true,preventDefault(){this.handled=true;}};
+stealthFlow.dl.keydown({...shortcut,target:{closest:()=>true}});
+assert.equal(stealthFlow.document.title,'Picard Relay — Console');
+stealthFlow.dl.keydown(shortcut);
+assert.equal(shortcut.handled,true);
+assert.equal(stealthFlow.document.title,'Work Console');
+stealthFlow.dl.keydown({...shortcut,repeat:true});
+assert.equal(stealthFlow.document.title,'Work Console');
+stealthFlow.dl.keydown(shortcut);
+assert.equal(stealthFlow.document.title,'Picard Relay — Console');
+stealthFlow.get('stealth-auto').value='6';
+stealthFlow.get('stealth-auto').listeners.change();
+assert.deepEqual([...displayPrefs],[['picard:stealth','6']]);
+const idleCallback=[...stealthFlow.timers.entries()].at(-1);
+stealthFlow.dl.pointerdown();
+assert.equal(stealthFlow.timers.has(idleCallback[0]),false);
+const restartedIdleCallback=[...stealthFlow.timers.values()].at(-1);
+restartedIdleCallback();
+assert.equal(stealthFlow.document.title,'Work Console');
+assert.equal(stealthFlow.requests.length,beforeStealthReads);
+assert.deepEqual([...displayPrefs],[['picard:stealth','6']]);
+const automatic=harness(displayStatus,{storage:displayStorage});
+await flush();
+assert.equal(automatic.get('stealth-auto').value,'6');
+assert.equal(automatic.document.title,undefined);
+automatic.document.visibilityState='hidden';
+automatic.dl.visibilitychange();
+assert.equal(automatic.document.title,'Work Console');
+automatic.document.visibilityState='visible';
+automatic.dl.visibilitychange();
+assert.equal(automatic.document.title,'Work Console');
+await feedbackFlow.click('stealth-mode');
+assert.equal(feedbackFlow.document.title,'Work Console');
+await feedbackFlow.click('stealth-mode');
+
+const replacementId='00000000-0000-4000-8000-000000000001';
+let replacementStatus={v:1,enabled:true,project:'Test / Free project',state:'idle',id:null,recent:true};
+let keyPosts=0;
+const replacementFlow=harness(async(path,options)=>{
+ if(path==='/auth/state')return ok({enrolled:true});
+ if(path!=='/groq/key')return ok({...health,keyReplacement:replacementStatus});
+ if(options.method==='GET')return ok(replacementStatus);
+ keyPosts++;
+ assert.deepEqual(JSON.parse(options.body),{id:replacementId,key:'gsk_SYNTHETIC_REPLACEMENT_TEST_ONLY',free:true});
+ replacementStatus={...replacementStatus,state:'replaced',id:replacementId};
+ return bad(503,'lost-response');
+});
+await flush();
+assert.equal(replacementFlow.get('replace-groq-row').hidden,false);
+await replacementFlow.click('replace-groq-open');
+assert.equal(replacementFlow.get('replace-groq-dialog').open,true);
+assert.match(replacementFlow.get('replace-groq-project').textContent,/Test \/ Free project/);
+replacementFlow.get('replace-groq-secret').value='gsk_SYNTHETIC_REPLACEMENT_TEST_ONLY';
+await replacementFlow.submit('replace-groq-form');
+assert.equal(keyPosts,0);
+replacementFlow.get('replace-groq-free').checked=true;
+await replacementFlow.submit('replace-groq-form');
+await flush();
+assert.equal(replacementFlow.get('replace-groq-secret').value,'');
+assert.equal(replacementFlow.get('replace-groq-dialog').open,false);
+assert.equal(replacementFlow.get('replace-groq-status').textContent,'Key replaced.');
+assert.equal(keyPosts,1);
+
+let keyNow=Date.parse(health.observedAt),keyStatus={...health,groqKeyExpiresAt:null};
+class KeyClock extends Date {static now(){return keyNow;}}
+const keyFlow=harness(async path=>path==='/auth/state'?ok({enrolled:true}):keyStatus?ok(keyStatus):bad(503,'unavailable'),{clock:KeyClock});
+await flush();
+assert.equal(keyFlow.get('groq-key').hidden,false);
+assert.equal(keyFlow.get('key-expiry').textContent,'Expiry unknown');
+for(const [time,pattern] of [[604800001,/^Expires · /],[604800000,/^Expires soon · /],[0,/^Expired · /]]){
+ keyStatus={...health,groqKeyExpiresAt:keyNow+time};
+ await keyFlow.click('refresh');
+ assert.match(keyFlow.get('key-expiry').textContent,pattern);
+}
+keyNow+=60000;
+await keyFlow.click('refresh');
+assert.equal(keyFlow.get('key-expiry').textContent,'Expiry unknown');
+keyStatus={...keyStatus,observedAt:new Date(keyNow).toISOString()};
+await keyFlow.click('refresh');
+assert.match(keyFlow.get('key-expiry').textContent,/^Expired · /);
+keyStatus=null;
+await keyFlow.click('refresh');
+assert.equal(keyFlow.get('key-expiry').textContent,'Expiry unknown');
+keyFlow.wl.pagehide();
+assert.equal(keyFlow.get('groq-key').hidden,true);
+
+let recognitionStatus={...health,recognition:'2 Kills · 1 Capture'};
+const recognitionFlow=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok(recognitionStatus));
+await flush();
+assert.equal(recognitionFlow.get('recognition').textContent,'2 Kills · 1 Capture');
+assert.equal(recognitionFlow.get('recognition').hidden,false);
+recognitionStatus={...health,recognition:'0 Kills · 1 Capture'};
+await recognitionFlow.click('refresh');
+assert.equal(recognitionFlow.get('recognition').textContent,'0 Kills · 1 Capture');
+recognitionStatus=health;
+await recognitionFlow.click('refresh');
+assert.equal(recognitionFlow.get('recognition').hidden,true);
+assert.equal(recognitionFlow.get('recognition').textContent,'');
+recognitionStatus={...health,recognition:'1 Kill · 0 Captures'};
+await recognitionFlow.click('refresh');
+assert.equal(recognitionFlow.get('recognition').hidden,false);
+recognitionFlow.wl.pagehide();
+assert.equal(recognitionFlow.get('recognition').hidden,true);
+assert.equal(recognitionFlow.get('recognition').textContent,'');
+assert.equal(feedbackFlow.get('feedback-open').hidden,false);
+const requestsBeforeFeedback=feedbackFlow.requests.length;
+await feedbackFlow.click('feedback-open');
+assert.equal(feedbackFlow.get('feedback-dialog').open,true);
+await feedbackFlow.submit('feedback-form');
+assert.match(feedbackFlow.get('feedback-note').textContent,/Enter a title/);
+assert.equal(feedbackFlow.get('feedback-preview').hidden,true);
+feedbackFlow.get('feedback-title').value='  Add a sample panel  ';
+feedbackFlow.get('feedback-details').value='x'.repeat(2401);
+await feedbackFlow.submit('feedback-form');
+assert.match(feedbackFlow.get('feedback-note').textContent,/Enter a description/);
+feedbackFlow.get('feedback-details').value='  Literal <script> remains text.  ';
+await feedbackFlow.submit('feedback-form');
+assert.equal(feedbackFlow.get('feedback-preview').hidden,false);
+assert.equal(feedbackFlow.get('feedback-draft').value,'Feature: Add a sample panel\n\nLiteral <script> remains text.');
+await feedbackFlow.click('feedback-copy');
+assert.deepEqual(feedbackFlow.copied,['Feature: Add a sample panel\n\nLiteral <script> remains text.']);
+feedbackFlow.get('feedback-form').listeners.input();
+assert.equal(feedbackFlow.get('feedback-preview').hidden,true);
+await feedbackFlow.click('feedback-copy');
+assert.equal(feedbackFlow.copied.length,1);
+await feedbackFlow.click('feedback-close');
+assert.equal(feedbackFlow.get('feedback-draft').value,'');
+function rightClickFeedback(id){
+ let handled=false;
+ feedbackFlow.get('console-surface').listeners.contextmenu({target:feedbackFlow.get(id),preventDefault(){handled=true;}});
+ return handled;
+}
+assert.equal(rightClickFeedback('cockpit-glass'),false);
+for(let i=0;i<5;i++) await feedbackFlow.click('logo-wrap');
+assert.equal(rightClickFeedback('nav-overview'),false);
+assert.equal(rightClickFeedback('cockpit-glass'),true);
+assert.equal(feedbackFlow.get('feedback-kind').value,'bug');
+feedbackFlow.get('feedback-title').value='A private unfinished draft';
+feedbackFlow.wl.pagehide();
+assert.equal(feedbackFlow.get('feedback-dialog').open,false);
+assert.equal(feedbackFlow.get('feedback-title').value,'');
+assert.equal(feedbackFlow.get('feedback-open').hidden,true);
+assert.equal(rightClickFeedback('cockpit-glass'),false);
+assert.equal(feedbackFlow.requests.length,requestsBeforeFeedback);
+console.log('PASS feedback: validated literal preview, explicit copy, scoped background shortcut and private clearing without network.');
 let h=harness(async path=>path==='/auth/state'?ok({enrolled:false}):path==='/auth/setup'?ok({ok:true}):ok(health));await flush();assert.equal(h.get('setup-form').hidden,false);assert.equal(h.get('private').hidden,true);assert.deepEqual(h.requests.map(x=>x.path),['/auth/state']);
 h.get('new-password').value='x'.repeat(7);h.get('confirm-password').value='x'.repeat(7);h.get('setup-code').value='private-test-code';await h.submit('setup-form');assert.equal(h.requests.length,1);assert.match(h.get('auth-message').textContent,/8 and 128 UTF-8 bytes/);
 h.get('new-password').value='correct-test-password';h.get('confirm-password').value='mismatch';await h.submit('setup-form');assert.equal(h.requests.length,1);
@@ -101,7 +291,7 @@ await app.get('jobs-list').children[0].children[0].listeners.click();assert.equa
 for(const [filter,expected] of [['completed',1],['active',1],['attention',1],['all',3]]){app.get('jobs-filter').value=filter;app.get('jobs-filter').listeners.change();assert.equal(app.get('jobs-list').children.length,expected);assert.equal(app.get('job-details').hidden,true);assert.equal(app.get('detail-ref').textContent,'-');}
 assert.deepEqual(app.requests.slice(requestsBeforeNavigation).map(r=>({path:r.path,method:r.options.method})),[{path:"/updates",method:"GET"}]);assert.equal(app.get('activity-list').children.length,3);
 assert.equal(app.get('groq-availability').textContent,'Not available for new work');assert.match(app.get('groq-blocking').textContent,/unavailable|not supplied|not reported/i);
-assert.ok(html.includes('This console cannot submit or approve a request.'));assert.ok(html.includes('Filters apply to loaded rows only.'));assert.match(html,/<details class="technical"><summary>Request limits and safeguards<\/summary>/);assert.equal((html.match(/<details/g)||[]).length,3);assert.match(html,/<details class="console-info"><summary aria-label="About status and privacy">/);
+assert.ok(html.includes('This console cannot submit or approve a request.'));assert.ok(html.includes('Filters apply to loaded rows only.'));assert.match(html,/<details class="technical"><summary>Request limits and safeguards<\/summary>/);assert.equal((html.match(/<details/g)||[]).length,4);assert.match(html,/<details class="console-info"><summary aria-label="About status and privacy">/);
 
 for(const event of ['logout','401','403','pagehide']){
  let lost=false;const code=event==='403'?403:401;
@@ -224,7 +414,7 @@ const hudReads=hud.requests.length;await hud.click('hud-open-jobs');assert.equal
 const glassClick=target=>hud.get('console-surface').listeners.click({target});
 for(const id of ['nav-jobs','private','hud-open-jobs','refresh','logout']){glassClick(hud.get(id));assert.equal(hud.get('console-surface').dataset.hudExpanded,'true');}
 hud.get('console-tools').open=true;glassClick(hud.get('cockpit-glass'));assert.equal(hud.get('console-tools').open,false);assert.equal(hud.get('console-surface').dataset.hudExpanded,'false');assert.equal(hud.get('view-jobs').hidden,false);assert.equal(hud.requests.length,hudReads);
-await hud.click('hud-open-jobs');glassClick(hud.get('console-surface'));assert.equal(hud.get('console-surface').dataset.hudExpanded,'false');await hud.click('hud-open-jobs');
+await hud.click('hud-open-jobs');glassClick(hud.get('hud-instruments'));assert.equal(hud.get('console-surface').dataset.hudExpanded,'false');await hud.click('hud-open-jobs');
 await hud.click('hud-close');assert.equal(hud.get('console-surface').dataset.hudExpanded,'false');assert.equal(hud.requests.length,hudReads);await hud.click('hud-progress');assert.equal(hud.get('private').dataset.width,'660');hud.wl.keydown({key:'Escape'});assert.equal(hud.get('console-surface').dataset.hudExpanded,'false');
 await hud.click('logout');assert.equal(hud.get('hud-instruments').hidden,true);assert.equal(hud.get('hud-health').textContent,'Not checked');assert.equal(hud.get('hud-active').textContent,'—');assert.equal(hud.get('hud-done').textContent,'—');
 console.log('PASS windshield HUD: generated/reviewed state helper, exact booleans/view whitelist, compact instruments, fitting panels, minimize/Escape without network and private clearing.');
@@ -235,3 +425,44 @@ console.log('PASS projected counts: exact live queue/running/completed values, s
 let hudTime=100000;class HudClock extends Date{constructor(...args){super(...(args.length?args:[hudTime]));}static now(){return hudTime;}}
 const agingHud=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok({...health,observedAt:new Date(100000).toISOString()}),{clock:HudClock});await flush();for(let i=0;i<5;i++)await agingHud.click('logo-wrap');assert.equal(agingHud.get('hud-done').textContent,'2');hudTime+=60000;for(const callback of [...agingHud.timers.values()])await callback();assert.equal(agingHud.get('hud-active').textContent,'—');assert.equal(agingHud.get('hud-done').textContent,'—');assert.equal(agingHud.get('hud-open-jobs').attrs['aria-label'],'Jobs: counts unavailable');
 console.log('PASS projected freshness: existing timers age out the windshield counts without a new successful observation.');
+
+// Actual embedded instrument, pace and look controls; no extra reads or loop.
+let powerCpu=100,powerBad=false,powerAt=1_000_000;
+class PowerClock extends Date{constructor(...args){super(...(args.length?args:[powerAt]));}static now(){return powerAt;}}
+const power=harness(async path=>path==='/auth/state'?ok({enrolled:true}):powerBad?bad(503,'unavailable'):ok({...health,observedAt:new Date(powerAt).toISOString(),resources:{v:1,scope:'vm',observedAtMs:powerAt,cpuPercent:powerCpu,memoryUsedBytes:32*1048576,memoryTotalBytes:64*1048576,relayMemoryBytes:24*1048576}}),{clock:PowerClock});
+await flush();for(let i=0;i<5;i++)await power.click('logo-wrap');
+assert.equal(power.get('power-value').textContent,'100%');assert.equal(power.get('system-memory').textContent,'50%');assert.equal(power.get('power-relay').textContent,'24 MB');
+for(const a of power.starAnimations){assert.equal(a.playbackRate,1.3);assert.equal(a.currentTime,1234);}
+const powerReads=power.requests.length;await power.click('power-toggle');assert.equal(power.get('power-details').hidden,false);assert.equal(power.get('power-toggle').attrs['aria-expanded'],'true');
+power.wl.keydown({key:'Escape'});assert.equal(power.get('power-details').hidden,true);assert.equal(power.requests.length,powerReads);
+const look=power.get('console-surface').listeners.pointermove,scene=power.get('space-scene');
+look({target:power.get('cockpit-glass'),pointerType:'mouse',clientX:1200,clientY:800});
+assert.equal(scene.style.values.get('--look-x'),'-14.00px');assert.equal(scene.style.values.get('--look-y'),'-10.00px');
+for(const id of ['navigation','hud-instruments','private'])assert.equal(power.get(id).style.values.size,0,'HUD remains stationary: '+id);
+powerAt+=34;look({target:power.get('private'),pointerType:'mouse',clientX:0,clientY:0});assert.equal(scene.style.values.get('--look-x'),'-14.00px');
+power.get('console-surface').listeners.pointerleave();assert.equal(scene.style.values.get('--look-x'),'0.00px');
+for(const key of ['__proto__','constructor','toString','Escape','other'])power.get('cockpit-glass').listeners.keydown({target:power.get('cockpit-glass'),key});
+assert.equal(scene.style.values.get('--look-x'),'0.00px');
+power.get('cockpit-glass').listeners.keydown({target:power.get('cockpit-glass'),key:'ArrowLeft',preventDefault(){}});assert.equal(scene.style.values.get('--look-x'),'4.00px');
+await power.click('motion');assert.equal(scene.style.values.get('--look-x'),'0.00px');powerAt+=34;look({target:power.get('cockpit-glass'),pointerType:'mouse',clientX:0,clientY:0});assert.equal(scene.style.values.get('--look-x'),'0.00px');await power.click('motion');
+powerCpu=0;await power.click('refresh');assert.equal(power.get('power-value').textContent,'0%');for(const a of power.starAnimations)assert.equal(a.playbackRate,1);
+powerBad=true;await power.click('refresh');assert.equal(power.get('power-value').textContent,'—');assert.equal(power.get('power-relay').textContent,'—');for(const a of power.starAnimations)assert.equal(a.playbackRate,1);
+await power.click('power-toggle');power.wl.pagehide();assert.equal(power.get('power-details').hidden,true);assert.equal(power.get('power-toggle').attrs['aria-label'],'VM CPU: unavailable');
+const points=[...html.matchAll(/M(\d+) (\d+)h0\.01/g)].map(m=>[+m[1],+m[2]]);assert.equal(points.length,128);assert.equal(new Set(points.map(p=>p.join(','))).size,128);
+assert.match(style,/animation:star-travel 113s/);assert.match(style,/animation-duration:179s/);assert.doesNotMatch(script,/requestAnimationFrame|setInterval|canvas|WebGL/);
+console.log('PASS flight instruments: real-zero/unknown resource readings, a 1–1.3x phase-preserving pace, local details, input-only bounded space look, fixed HUD, pause/auth clearing, and 128 irregular round points with staggered travel.');
+// HTML parsing normalizes CRLF; raw carriage returns would invalidate the CSP hash.
+assert.doesNotMatch(script,/\r/);
+const resourceSample={v:1,scope:'vm',observedAtMs:powerAt,cpuPercent:null,memoryUsedBytes:32,memoryTotalBytes:64,relayMemoryBytes:24};
+for(const [resources,cpu,mem]of [
+ [resourceSample,'—','50%'],
+ [{...resourceSample,cpuPercent:75,memoryUsedBytes:65},'75%','—'],
+ [{...resourceSample,cpuPercent:75,observedAtMs:powerAt-60000},'—','—'],
+ [{...resourceSample,cpuPercent:75,observedAtMs:powerAt+5001},'—','—'],
+ [Object.assign([],{...resourceSample,cpuPercent:75}),'—','—'],
+ [{...resourceSample,cpuPercent:'PRIVATE_CPU',hostname:'PRIVATE_HOST'},'—','50%']
+]){
+ const h=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok({...health,observedAt:new Date(powerAt).toISOString(),resources}),{clock:PowerClock});await flush();
+ assert.equal(h.get('power-value').textContent,cpu);assert.equal(h.get('power-memory').textContent,mem);assert.doesNotMatch([...h.els.values()].map(e=>e.textContent).join(' '),/PRIVATE/);
+}
+console.log('PASS resource projection: invalid/array/stale/future readings are unknown; memory remains independent of CPU; inline CSP content has canonical line endings.');

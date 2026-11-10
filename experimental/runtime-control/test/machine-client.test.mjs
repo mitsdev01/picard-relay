@@ -92,8 +92,11 @@ test('machine identity binds drafts durably and excludes owner and other-client 
   await f.dispatcher.runOnce(); // Synthetic adapter only; no network.
   const ownerRead=await f.request('/workspace/requests/'+d.payload.eventId);
   assert.equal((await f.request('/workspace/reviews/'+d.payload.eventId,{body:{expectedRevision:0,decision:'accepted',note:'OWNER_PRIVATE_REVIEW',resultSha256:ownerRead.body.result.sha256}})).status,200);
+  assert.equal((await f.request('/workspace/grades/'+d.payload.eventId,{body:{expectedRevision:0,score:4,note:'OWNER_PRIVATE_GRADE',resultSha256:ownerRead.body.result.sha256}})).status,200);
   const machineRead=await f.request('/workspace/requests/'+d.payload.eventId,{headers:headers(0)});
   assert.equal(machineRead.status,200);assert.equal(machineRead.body.resultAvailable,true);
+  assert.equal('grade' in machineRead.body,false);assert.equal(JSON.stringify(machineRead.body).includes('OWNER_PRIVATE_GRADE'),false);
+  assert.equal((await f.request('/workspace/grades/'+d.payload.eventId,{headers:headers(0),body:{}})).status,403);
   assert.equal('review' in machineRead.body,false);assert.equal(JSON.stringify(machineRead.body).includes('OWNER_PRIVATE_REVIEW'),false);
   assert.equal((await f.request('/workspace/requests/'+d.payload.eventId,{headers:headers(1)})).status,404);
   assert.equal((await f.request('/workspace/requests/'+'d'.repeat(64),{headers:headers(0)})).status,404);
@@ -124,7 +127,8 @@ test('workspace-review bearer may read result with reviews and post accept when 
   await f.dispatcher.runOnce();
   const ref=d.payload.eventId;
   const pre=(await f.request('/workspace/requests/'+ref,{headers:hReview})).body;
-  assert.equal(pre.review?.revision>=0,true);
+  assert.equal(pre.review?.revision>=0,true);assert.equal('grade' in pre,false);
+  assert.equal((await f.request('/workspace/grades/'+ref,{headers:hReview,body:{}})).status,403);
   const ownerFirst=(await f.request('/workspace/requests/'+ref)).body;
   assert.equal((await f.request('/workspace/reviews/'+ref,{body:{expectedRevision:0,decision:'accepted',note:'owner',resultSha256:ownerFirst.result.sha256}})).status,200);
   const afterOwner=(await f.request('/workspace/requests/'+ref,{headers:hReview})).body;

@@ -27,10 +27,10 @@ export function captainConsoleHtml(html){
  replace('aria-label="Recent activity"></ul>','aria-label="Recent activity"></ul></div>');
  replace('<p id="route-status" hidden></p>','');
  replace('<div class="captain-route"','<p id="route-status" role="status" aria-live="polite"></p><div class="captain-route"');
- const scene=html.match(/<div class="space-scene"[\s\S]*?<\/svg><\/div>/)?.[0];
+ const scene=html.match(/<div id="space-scene" class="space-scene"[\s\S]*?<\/svg><\/div>/)?.[0];
  if(!scene)throw Error('captain_theme_contract_changed');
  replace(scene,'');
- replace('<div class="workspace" id="cockpit-glass">','<div class="workspace" id="cockpit-glass"><div class="captain-window">'+captainSpaceScene()+'<div class="captain-doors" aria-hidden="true"><span></span><span></span></div>');
+ replace('<div class="workspace" id="cockpit-glass" tabindex="0" aria-label="Space view; arrow keys look around">','<div class="workspace" id="cockpit-glass" tabindex="0" aria-label="Space view; arrow keys look around"><div class="captain-window">'+captainSpaceScene()+'<div class="captain-doors" aria-hidden="true"><span></span><span></span></div>');
  replace('<footer class="footer">','</div><footer class="footer">');
  replace('</style>',CAPTAIN_STYLE.replace(/\/\*[\s\S]*?\*\//g,'')+'\n</style>');
  return html;
@@ -45,9 +45,9 @@ function captainSpaceScene(){
  const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
  const layers=[0,1,2].map(layer=>{
   const points=Array.from({length:layer===0?150:65},()=>`M${(random()*1200).toFixed(1)} ${(random()*800).toFixed(1)}h.01`).join('');
-  return `<svg class="captain-stars captain-stars-${layer}" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice"><path d="${points}" fill="none" stroke="${['#b1c5df','#e7f2ff','#fff3d8'][layer]}" stroke-width="${[.7,1.1,1.7][layer]}" stroke-linecap="round"/></svg>`;
+  return `<svg ${layer<2?`id="space-plane-${layer}"`:""} class="captain-stars captain-stars-${layer}" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice"><path d="${points}" fill="none" stroke="${['#b1c5df','#e7f2ff','#fff3d8'][layer]}" stroke-width="${[.7,1.1,1.7][layer]}" stroke-linecap="round"/></svg>`;
  }).join('');
- return '<div class="space-scene captain-observation" aria-hidden="true">'+layers+'<div class="captain-planet"></div><div class="captain-window-trim"><span>Observation lounge</span><span>Deep space · visual display</span></div></div>';
+ return '<div id="space-scene" class="space-scene captain-observation" aria-hidden="true">'+layers+'<div class="captain-planet"></div><div class="captain-window-trim"><span>Observation lounge</span><span>Deep space · visual display</span></div></div>';
 }
 
 export const CAPTAIN_STYLE=String.raw`
@@ -150,4 +150,23 @@ body:has(.console.captain){margin:0}.console.captain{width:100%;max-width:none;m
 .console.captain #auth .auth-submit:hover:not(:disabled){background:linear-gradient(#91304e,#621c34);border-color:var(--accent)}
 .console.captain #auth .auth-message{margin:20px 0 0;padding-top:16px;border-top:1px solid var(--line);color:var(--warn);font-size:13px;overflow-wrap:anywhere}
 @media(max-width:700px){.console.captain:has(#auth:not([hidden])) .captain-window{padding:16px 8px;align-items:start}.console.captain #auth{margin:16px auto;border-radius:18px}.console.captain:has(#auth:not([hidden])) .captain-auth-breadcrumb{font-size:10px}}
+
+/* Preserve Captain surfaces when upstream adds instrument materials. */
+.console.captain .sidebar .brand,.console.captain .console-utilities{background:transparent;border:0;box-shadow:none}
+.console.captain nav{box-shadow:none;border:0}
+.console.captain nav button{border-radius:12px!important}
+.console.captain nav button .nav-index{background:none;box-shadow:none;text-shadow:none}
+/* Stealth hides Captain ornament as well as the standard insignia and scenery. */
+.console.captain[data-stealth=true]{--bg:#191919;--side:#222;--surface:#2c2c2c;--line:#434343;--accent:#dededb;--text:#f2f2ef;--muted:#b8b8b5;background:var(--bg)}
+.console.captain[data-stealth=true] :is(.captain-sidebar-rank,.captain-brand-subtitle,.captain-access-panel,.captain-doors,.captain-eyebrow,.captain-route,.captain-pips,.captain-auth-breadcrumb){display:none!important}
+.console.captain[data-stealth=true] :is(.sidebar,.captain-topbar,.captain-status,.training,.counts,.captain-activity,#auth,button){background:var(--bg);border-color:var(--line);box-shadow:none}
+.console.captain[data-stealth=true] :is(.sidebar,.brand,nav,.footer,.captain-window,#auth,.view-head,.captain-card-title,.section-title h2,.training-heading h2)::before,.console.captain[data-stealth=true] :is(.sidebar,.brand,nav,.footer,.view-head,.captain-window)::after{display:none!important}
+.console.captain[data-stealth=true] .console-menu{top:calc(100% + 8px);bottom:auto;right:0;left:auto}
+.console.captain[data-stealth=true] .captain-topbar{border-radius:0}
+.console.captain[data-stealth=true] .captain-breadcrumb{font-size:0}
+.console.captain[data-stealth=true] .captain-breadcrumb>span{font-size:0}
+.console.captain[data-stealth=true] nav{background:transparent!important;border-radius:0}
+.console.captain[data-stealth=true] .counts div+div{border-color:var(--line)}
+.console.captain[data-stealth=true] #training-next{display:none}
+.console.captain[data-stealth=true] .signal,.console.captain[data-stealth=true] .readiness{grid-column:1/-1}
 `;

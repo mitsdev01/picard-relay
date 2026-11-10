@@ -24,11 +24,33 @@ The console uses same-origin credentialed requests, no-store responses and no lo
 
 Common error classes are `400` invalid request, `401` authentication failure, `409` invalid/expired/conflicting approval or record, `413` oversized body, `429` rate limit and `503` unavailable/blocked state. A status/error response never grants permission to resubmit an uncertain invocation. See the handler's typed error map for exact per-route behavior.
 
+### Groq key replacement
+
+On hosts with the protected replacement helper connected, authenticated
+`GET /groq/key` returns the enrolled project label, replacement state,
+request ID and whether the owner recently signed in. The normal status
+response also carries the safe replacement state while the helper is enabled.
+Same-origin `POST /groq/key` accepts exactly `{id,key,free:true}` from a
+recent owner session. The UUID identifies the operation. The key is sent
+only to the local protected helper and never returned. The 1 KiB request
+limit also applies at the reverse proxy.
+
+An accepted submission returns HTTP 202 and `checking`. Read status to learn
+whether the key was `replaced`, `rejected` with the previous key kept, or
+`unknown`. An interrupted submission is followed by a read, with zero
+automatic retries or provider calls. See [Operations](OPERATIONS.md#replace-a-groq-key).
+
 ## Status and history scope
 
 `GET /status` includes an allowlisted `scope` value (`owner` or `task`) and counters for queued, claimed, invoking, completed, failed, blocked, cancelled and uncertain jobs. With both admission and reusable Board admission already enabled, the service queries only the configured owner across tasks; other configurations retain their allowed-task filter. Clients cannot override this scope through query parameters. `GET /jobs` uses the same server-selected scope and continues to exclude raw prompts, results and owner/task IDs.
 
+An admission-enabled host also reports `groqKeyExpiresAt` as epoch milliseconds or `null` when the active key has no verified operator-recorded expiry. The date is for display. Key contents, fingerprints, evidence paths and grant deadlines stay separate.
+
 The console polls read-only status/latest history every 15 seconds while visible and signed in, with a single in-flight refresh. Hidden/auth-lost pages stop polling. This does not submit, approve, retry or renew any work. Groq availability and relay counts are not provider billing/quota measurements.
+
+`GET /status` also includes an optional `resources` object in the signed runtime: `{v:1, scope:"vm", observedAtMs, cpuPercent, memoryUsedBytes, memoryTotalBytes, relayMemoryBytes}`. All readings are numbers or `null`; the timestamp is epoch milliseconds. CPU is the aggregate Linux VM utilization between two kernel samples, across all CPUs and workloads, with idle and I/O wait excluded. It is not the relay's CPU share or its remaining cloud/AI allowance. Memory used is `MemTotal - MemAvailable`; relay memory is this Node process's resident set in bytes. No process list, hostname, paths or raw kernel text is returned.
+
+The service samples on authenticated status reads, at most once per 15 seconds, with no new timer or service. CPU starts unknown and becomes unknown after an unreadable/reset counter, zero-tick delta or a sampling gap of 60 seconds or more. Unsupported/non-Linux readings are `null`. Clients treat observations aged 60 seconds or more, or over five seconds ahead, as unavailable. Valid memory readings remain usable independently of CPU. See [the instrument guide](FLIGHT-INSTRUMENTS.md) for the UI and motion limits.
 
 ## Signed consuming-client bridge
 
@@ -74,6 +96,7 @@ These routes exist only with explicit workspace activation, on the existing exac
 | POST /workspace/requests | {requestId,nonce,draftSha256,approve:true}; atomically consumes approval and queues one exact job. |
 | GET /workspace/requests/<ref> | Read the draft or validate the owner-scoped job/result and review history. This never invokes the provider. |
 | POST /workspace/reviews/<ref> | {expectedRevision,decision,note,resultSha256}; decision is accepted or changes_requested. |
+| POST /workspace/grades/<ref> | {expectedRevision,score,note,resultSha256}; score is an integer 1–5, note is at most 500 characters. Reviewer is assigned as owner by the server. |
 
 The server assigns a grant and fixes the provider, output ceiling and 15-minute request lifetime. A duplicate draft ID with the same input returns the original clocks and grant; different input conflicts. Approval, immutable work, enrollment association and source provenance are committed in one SQLite transaction. Owner-console approval records are distinct from signed-Board attestations. Replays never become new grants. A lost response is recovered through GET; clients must not silently prepare a replacement request.
 
@@ -87,7 +110,7 @@ A matching `Authorization: Bearer` token may call only `GET /workspace/config`, 
 
 The runtime re-reads the file on each attempt, so revocation takes effect without another restart after the process has loaded the setting. This identity does not add a public route, a cancel route, or a second provider. The signed bridge still has its own HMAC `cancel` action; the laptop client does not receive that key. Setup for the local Cursor connector is in [the coding connector runbook](CURSOR-CODING-CONNECTOR.md).
 
-Machine drafts have a durable client-id association committed atomically with the draft in the existing metadata namespace. Only that client can recover, approve, submit or read the machine draft/result. Existing owner drafts and signed-board results are never adopted by a machine client, even when its token knows their IDs. Owner-cookie access remains unchanged. Machine result responses omit reviews; machine configuration responses omit owner history statistics, training and progress. Client ids must not be reassigned to unrelated clients when rotating credentials.
+Machine drafts have a durable client-id association committed atomically with the draft in the existing metadata namespace. Only that client can recover, approve, submit or read the machine draft/result. Existing owner drafts and signed-board results are never adopted by a machine client, even when its token knows their IDs. Owner-cookie access remains unchanged. Machine coding result responses omit reviews and quality grades; machine configuration responses omit owner history statistics, training and progress. Client ids must not be reassigned to unrelated clients when rotating credentials.
 
 The registry must be a regular, single-link file with exactly mode 0600, owned by root or the runtime uid and readable by that process. In the usual unprivileged service, use the runtime uid: a root-owned 0600 file is not readable by an ordinary runtime process. No raw token belongs on the host.
 
@@ -103,4 +126,18 @@ A matching `Authorization: Bearer` token may call only:
 - `GET /workspace/requests/<ref>` where the workspace draft for `<ref>` was created under that `codingClientId`
 - `POST /workspace/reviews/<ref>` with `{ expectedRevision, decision, note, resultSha256 }` for that job
 
-It cannot list history, create drafts, approve, submit, update, use owner setup or updates, or call the signed bridge. The **`workspace-coding`** bearer still cannot POST reviews. Sending bearer and owner cookie together remains rejected.
+It cannot list history, create drafts, approve, submit, update, use owner setup or updates, or call the signed bridge. Neither laptop bearer can read or write quality grades. The **`workspace-coding`** bearer still cannot POST reviews. Sending bearer and owner cookie together remains rejected.
+
+## Response quality grades
+
+In a saved result, open **Quality**, select 1 (Poor) through 5 (Excellent), optionally add a note and save. The latest score shows whether the owner or a signed client recorded it. History preserves earlier grades. Grades describe the exact saved answer text; they do not accept a result, earn rank, change provider selection or run another call.
+
+The authenticated owner route above uses the existing session and exact-origin checks. `expectedRevision` starts at zero and must match the grade history. A lost response can be recovered by reading the same request; an exact duplicate write is idempotent. Changed input at an old revision returns conflict. Each result permits at most 100 grade events, with a 500-character note per event. Records reuse the existing durable SQLite metadata table without migration. Unreadable grade metadata returns `grade:null` without hiding an otherwise intact saved answer, review or rank credit; further grading stops. A valid recorded grade whose hash contradicts changed saved answer text still fails closed.
+
+AI tools can record a grade through the existing signed `POST /bridge/v1` transport with this exact body:
+
+```json
+{"v":1,"action":"grade","ownerId":"<configured owner>","taskId":"<original task>","eventId":"<original ref>","payloadHash":"<original payload hash>","expectedRevision":0,"score":4,"note":"Useful, with a clear boundary.","resultSha256":"<saved answer SHA-256>"}
+```
+
+Use the existing `signRequest` and `verifyResponse` helpers. Workspace activation, same owner/task/source and the signed client's existing expiry/revocation boundary still apply; a key alone grants no new scope. The server records reviewer `{kind:"client",keyId:<authenticated key ID>}`. This identifies the authenticated client, not a verified AI model or human identity. A caller cannot label itself as the owner. Read the current grade using signed action `grade_status` with exactly `{v,action,ownerId,taskId,eventId,payloadHash}` before a later write. Grade reads and writes return only `{revision,latest}`, keeping transport responses bounded without enlarging the existing result response; the owner result route includes the complete bounded history. Grading is available during a provider outage and never renews execution approval. Host operators must include the new exact grade route from the disabled Caddy template when separately deploying this candidate.
