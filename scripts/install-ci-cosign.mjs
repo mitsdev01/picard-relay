@@ -20,7 +20,9 @@ export const ASSETS=Object.freeze([
 // --location-trusted. Supply the token through stdin, not argv or a file.
 export async function downloadAsset(asset,destination,{token='',signal,spawn=execFile}={}){
  if(!ASSETS.includes(asset))throw Error('cosign_asset_not_allowed');
- if(typeof token!=='string'||(token&&!/^[A-Za-z0-9_]+$/.test(token)))throw Error('cosign_token_invalid');
+ // Bearer token syntax includes JWT dots and base64 punctuation/padding.
+ // Still reject whitespace, quotes and backslashes that could inject config.
+ if(typeof token!=='string'||(token&&!/^[A-Za-z0-9._~+\/-]+=*$/.test(token)))throw Error('cosign_token_invalid');
  const config=token&&asset.url.startsWith(api)?`header = "Authorization: Bearer ${token}"\n`:'';
  const env={...process.env};delete env.GH_TOKEN;delete env.GITHUB_TOKEN;
  await new Promise((resolve,reject)=>{
