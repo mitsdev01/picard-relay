@@ -16,6 +16,22 @@ export const ASSETS=Object.freeze([
  {name:'kms.json',url:api+'660074423',sha256:'b1282021bf1d6f1031d5df46cba12386c9b438d56d276d72f4df184a0008512b',maxBytes:16384},
  {name:'public.key',url:'https://raw.githubusercontent.com/sigstore/cosign/v3.1.4/release/release-cosign.pub',sha256:'f4cea466e5e887a45da5031757fa1d32655d83420639dc1758749b744179f126',maxBytes:4096},
 ].map(Object.freeze));
+// Curl strips Authorization on cross-origin redirects. Never use
+// --location-trusted. Supply the token through stdin, not argv or a file.
+export async function downloadAsset(asset,destination,{token='',signal,spawn=execFile}={}){
+ if(!ASSETS.includes(asset))throw Error('cosign_asset_not_allowed');
+ if(typeof token!=='string'||(token&&!/^[A-Za-z0-9_]+$/.test(token)))throw Error('cosign_token_invalid');
+ const config=token&&asset.url.startsWith(api)?`header = "Authorization: Bearer ${token}"\n`:'';
+ const env={...process.env};delete env.GH_TOKEN;delete env.GITHUB_TOKEN;
+ await new Promise((resolve,reject)=>{
+  const child=spawn('/usr/bin/curl',['--disable','--config','-','--fail','--location','--silent','--show-error','--proto','=https','--proto-redir','=https','--max-redirs','5','--connect-timeout','10','--max-time','90','--max-filesize',String(asset.maxBytes),'--header','Accept: application/octet-stream','--header','X-GitHub-Api-Version: 2022-11-28','--output',destination,asset.url],{timeout:100000,maxBuffer:8192,signal,env},error=>{
+   // curl diagnostics and exec errors may contain request details: never echo.
+   if(error)reject(Error('cosign_download_failed:'+asset.name));else resolve();
+  });
+  child.stdin.on('error',()=>reject(Error('cosign_download_input_failed:'+asset.name)));
+  child.stdin.end(config);
+ });
+}
 export async function digestBoundedFile(file,maxBytes){
  const handle=await fs.open(file,constants.O_RDONLY|(constants.O_NOFOLLOW??0));
  try{
@@ -41,7 +57,7 @@ export async function main(){
  const deadline=setTimeout(()=>abort.abort(),180000);deadline.unref();
  try{
   await installVerifiedCosign({file,
-   async download(asset){await exec('/usr/bin/curl',['--fail','--location','--silent','--show-error','--proto','=https','--proto-redir','=https','--max-redirs','5','--connect-timeout','10','--max-time','90','--max-filesize',String(asset.maxBytes),'--header','Accept: application/octet-stream','--header','X-GitHub-Api-Version: 2022-11-28','--output',file(asset.name),asset.url],{timeout:100000,maxBuffer:8192,signal:abort.signal});},
+   download:asset=>downloadAsset(asset,file(asset.name),{token:process.env.GH_TOKEN??'',signal:abort.signal}),
    digest:asset=>digestBoundedFile(file(asset.name),asset.maxBytes),
    executable:name=>fs.chmod(file(name),0o700),
    run:(name,args)=>exec(file(name),args,{timeout:30000,maxBuffer:16384,signal:abort.signal}),
