@@ -187,6 +187,25 @@ function createStore({dbPath,now=Date.now,randomNonce=()=>randomBytes(32).toStri
    return {row,payload:p,approval:a};
   }catch{return null;}
  }
+ // Read-only provenance, never dispatch authority. Expired approvals remain evidence.
+ function readHistoricalApproval(eventId,source){
+  if(reusableBoardEnabled!==true||!reusableBinding||!hex(eventId))return null;
+  try{
+   const row=get(eventId),rows=db.prepare('SELECT nonce,expires FROM relay_nonces WHERE nonce GLOB ? LIMIT 2').all(PREFIX+(source==='authenticated-owner-console'?'owner-console:':'reusable-board:')+eventId+':*');
+   if(!rows.length)return null;
+   if(!row||rows.length!==1||rows[0].expires!==ASSOCIATION_EXPIRY)stop('existing_record_invalid');
+   const record=decode(rows[0]),a=record.approval,p=JSON.parse(row.payload_json),assoc=PREFIX+'enrollment:'+a.enrollmentId+':'+eventId;
+   if(!exact(record,['v','source','approval','workSha256'])||record.v!==1||record.source!==source||!(exact(a,['v','purpose','enrollmentId','inputSha256','issuedAt','expiresAt'])||exact(a,['v','purpose','enrollmentId','inputSha256','issuedAt','expiresAt','maxCompletionTokens'])&&a.maxCompletionTokens===4096)||a.v!==1||!['public-source-review','sanitized-source-proposal'].includes(a.purpose)||!hex(a.enrollmentId)||!hex(a.inputSha256)||!integer(a.issuedAt)||!integer(a.expiresAt)||a.expiresAt-a.issuedAt<1000||a.expiresAt-a.issuedAt>3600000||!db.prepare('SELECT 1 FROM relay_nonces WHERE nonce=? AND expires=?').get(assoc,ASSOCIATION_EXPIRY)||record.workSha256!==admissionHash(row.payload_json)||canonical(p)!==row.payload_json||p.ownerId!==reusableBinding.ownerId||row.owner!==p.ownerId||row.task!==p.taskId||row.message_id!==p.requestId||row.grant_id!==p.grantId||row.grant_expires!==a.expiresAt||p.grantExpiresAt!==a.expiresAt||row.payload_hash!==p.payloadHash||admissionHash(canonical({requestText:p.request?.text,taskContext:p.context}))!==a.inputSha256)stop('existing_record_invalid');
+   const copy={...p};delete copy.payloadHash;const issued=Date.parse(p.request?.createdAt);
+   const associations=db.prepare('SELECT nonce,expires FROM relay_nonces WHERE nonce GLOB ? LIMIT 2').all(PREFIX+'enrollment:*:'+eventId);
+   if(associations.length!==1||associations[0].nonce!==assoc||associations[0].expires!==ASSOCIATION_EXPIRY||p.eventId!==eventId||p.assistantId!=='groq:openai/gpt-oss-20b'||admissionHash(canonical([p.ownerId,p.taskId,p.requestId]))!==eventId||admissionHash(canonical(copy))!==p.payloadHash||!integer(issued)||issued<a.issuedAt||issued>=a.expiresAt||a.issuedAt>clock()||issued>clock())stop('existing_record_invalid');
+   return {row,payload:p,approval:a,source};
+  }catch{stop('existing_record_invalid');}
+ }
+ function readHistoricalWork(id){
+  const owner=workspaceEnabled===true?readHistoricalApproval(id,'authenticated-owner-console'):null,board=readHistoricalApproval(id,'authenticated-reusable-board');
+  if(owner&&board)stop('existing_record_invalid');return owner??board;
+ }
  function commitReusableBoard(options){return commitReusable({...options,source:'authenticated-reusable-board'});}
  function getReusableBoard(id){return getReusable(id,'authenticated-reusable-board');}
  function getWorkspaceWork(id){return workspaceEnabled===true?getReusable(id,'authenticated-owner-console'):null;}
@@ -295,6 +314,29 @@ function createStore({dbPath,now=Date.now,randomNonce=()=>randomBytes(32).toStri
    db.prepare('INSERT INTO relay_nonces VALUES(?,?)').run(key,ASSOCIATION_EXPIRY);return workspaceReview(ref);
   });
  }
+ function workspaceGrade(ref){
+  if(workspaceEnabled!==true||!hex(ref))stop('request_invalid');
+  const rows=db.prepare('SELECT nonce,expires FROM relay_nonces WHERE nonce GLOB ? LIMIT 101').all(PREFIX+'workspace:'+workspaceScope()+':grade:'+ref+':*');
+  if(rows.length>100)stop('grade_invalid');
+  const history=rows.map(row=>{if(row.expires!==ASSOCIATION_EXPIRY)stop('grade_invalid');const g=decode(row);if(!exact(g,['v','ref','revision','score','note','reviewer','resultSha256','recordedAt'])||g.v!==1||g.ref!==ref||!integer(g.revision)||g.revision<1||!Number.isInteger(g.score)||g.score<1||g.score>5||typeof g.note!=='string'||g.note.length>500||!validGradeReviewer(g.reviewer)||!hex(g.resultSha256)||!integer(g.recordedAt))stop('grade_invalid');return g;}).sort((a,b)=>a.revision-b.revision);
+  if(history.some((g,i)=>g.revision!==i+1))stop('grade_invalid');
+  return {revision:history.length,latest:history.at(-1)??null,history};
+ }
+ function validGradeReviewer(r){return exact(r,['kind'])&&r.kind==='owner'||exact(r,['kind','keyId'])&&r.kind==='client'&&typeof r.keyId==='string'&&/^[A-Za-z0-9_.:-]{1,100}$/.test(r.keyId);}
+ function saveWorkspaceGrade({ref,expectedRevision,score,note,resultSha256,reviewer}){
+  return transaction(()=>{
+   if(!integer(expectedRevision)||!Number.isInteger(score)||score<1||score>5||typeof note!=='string'||note.length>500||!hex(resultSha256)||!validGradeReviewer(reviewer))stop('request_invalid');
+   const row=get(ref);if(!row||row.owner!==reusableBinding?.ownerId||row.state!=='completed')stop('grade_unavailable');
+   let result;try{result=JSON.parse(row.result_json);}catch{stop('grade_unavailable');}
+   if(typeof result.body!=='string'||admissionHash(result.body)!==resultSha256)stop('grade_unavailable');
+   const grade=workspaceGrade(ref),next={v:1,ref,revision:expectedRevision+1,score,note,reviewer:{...reviewer},resultSha256,recordedAt:clock()};
+   if(grade.history.some(g=>g.resultSha256!==resultSha256))stop('grade_unavailable');
+   if(grade.revision===expectedRevision+1&&grade.latest.score===score&&grade.latest.note===note&&canonical(grade.latest.reviewer)===canonical(reviewer)&&grade.latest.resultSha256===resultSha256)return grade;
+   if(grade.revision!==expectedRevision)stop('grade_conflict');if(grade.revision>=100)stop('queue_capacity');
+   const key=PREFIX+'workspace:'+workspaceScope()+':grade:'+ref+':'+next.revision+':'+Buffer.from(canonical(next)).toString('base64url');
+   db.prepare('INSERT INTO relay_nonces VALUES(?,?)').run(key,ASSOCIATION_EXPIRY);return workspaceGrade(ref);
+  });
+ }
  // Disposable SQLite fixture for reusable admission. This is not connected to
  // the receiver and cannot authorize production work or invoke a provider.
  function commitReusableFixture({payload,ownerId,enrollmentId,approvedInputSha256,currentAvailability}){
@@ -335,7 +377,7 @@ function createStore({dbPath,now=Date.now,randomNonce=()=>randomBytes(32).toStri
    if(typeof loadLegacyBaseline!=='function'||typeof readLegacyMarkers!=='function')return false;
    const baseline=loadLegacyBaseline();
    if(baseline&&typeof baseline.then==='function'){void Promise.resolve(baseline).catch(()=>{});return false;}
-   if(!exact(baseline,['v','kind','enrollmentId','ownerId','taskId','assistantId','observedAt','rows'])||baseline.v!==1||baseline.kind!=='PICARD_LEGACY_BASELINE_V1'||baseline.enrollmentId!==enrollmentId||!legacyBinding||['ownerId','taskId','assistantId','enrollmentId'].some(key=>baseline[key]!==legacyBinding[key])||!integer(baseline.observedAt)||baseline.observedAt>clock()||!Array.isArray(baseline.rows)||baseline.rows.length!==legacy.length)return false;
+   if(!exact(baseline,['v','kind','enrollmentId','ownerId','taskId','assistantId','observedAt','rows'])||baseline.v!==1||baseline.kind!=='PICARD_LEGACY_BASELINE_V1'||enrollmentId!==(reusableBinding?.enrollmentId??legacyBinding?.enrollmentId)||!legacyBinding||['ownerId','taskId','assistantId','enrollmentId'].some(key=>baseline[key]!==legacyBinding[key])||!integer(baseline.observedAt)||baseline.observedAt>clock()||!Array.isArray(baseline.rows)||baseline.rows.length!==legacy.length)return false;
    const ids=new Set(legacy.map(row=>row.event_id)),markers=new Map();
    for(const entry of baseline.rows){
     if(!exact(entry,['eventId','grantId','state','rowSha256','markerName','markerSha256','acknowledgement'])||!hex(entry.eventId)||!ids.delete(entry.eventId)||typeof entry.grantId!=='string'||!entry.grantId||entry.grantId.length>200||!['completed','uncertain'].includes(entry.state)||!hex(entry.rowSha256)||!legacyMarkerName(entry.markerName)||!hex(entry.markerSha256)||markers.has(entry.markerName))return false;
@@ -359,16 +401,46 @@ function createStore({dbPath,now=Date.now,randomNonce=()=>randomBytes(32).toStri
  function hasEnrollmentUncertainty(enrollmentId,{excludeInvokingEventId=null}={}){
   if(!hex(enrollmentId)||excludeInvokingEventId!==null&&!hex(excludeInvokingEventId))stop('admission_scope_invalid');
   if(!legacyAdmissionReady(enrollmentId))return true;
-  const prefix=PREFIX+'enrollment:'+enrollmentId+':';
-  const rows=db.prepare("SELECT n.nonce,n.expires,j.event_id,j.state,(j.response_id IS NOT NULL AND j.result_json IS NOT NULL) AS saved FROM relay_nonces n LEFT JOIN relay_jobs j ON j.event_id=substr(n.nonce,?) WHERE n.nonce GLOB ? LIMIT 10001").all(prefix.length+1,prefix+'*');
+  const prefix=PREFIX+'enrollment:';
+  const rows=db.prepare("SELECT n.nonce,n.expires,j.event_id,j.owner,j.task,j.state,(j.response_id IS NOT NULL AND j.result_json IS NOT NULL) AS saved FROM relay_nonces n LEFT JOIN relay_jobs j ON j.event_id=substr(n.nonce,?) WHERE n.nonce GLOB ? LIMIT 10001").all(prefix.length+66,prefix+'*');
   if(rows.length>10000)return true;
   return rows.some(row=>{
-   if(row.expires!==ASSOCIATION_EXPIRY||!hex(row.event_id)||row.nonce!==prefix+row.event_id||!['queued','claimed','invoking','completed','failed','blocked','cancelled','uncertain'].includes(row.state))return true;
+   if(row.expires!==ASSOCIATION_EXPIRY||!hex(row.event_id)||!new RegExp('^'+prefix+'[a-f0-9]{64}:'+row.event_id+'$').test(row.nonce)||!['queued','claimed','invoking','completed','failed','blocked','cancelled','uncertain'].includes(row.state))return true;
+   const owner=reusableBinding?.ownerId??legacyBinding?.ownerId;
+   if(owner&&row.owner!==owner)return false;
+   if(reusableBoardEnabled!==true&&legacyBinding?.taskId&&row.task!==legacyBinding.taskId)return false;
    if(row.state==='uncertain')return true;
    // A restarted process cannot treat another pending invocation as fresh work.
    // Only answer() may exclude its own exact currently leased invocation.
    return row.state==='invoking'&&!row.saved&&row.event_id!==excludeInvokingEventId;
   });
+ }
+ // A per-grant reservation may be isolated only when its durable owner/job and
+ // original enrollment association remain verifiable. Unknown evidence stops use.
+ function pendingGrantAssociated(grantId,enrollmentId,readRetiredConsumed=null){
+  try{
+   if(!hex(enrollmentId))return false;
+   const rows=db.prepare('SELECT * FROM relay_jobs WHERE grant_id=? LIMIT 2').all(grantId);
+   if(rows.length!==1)return false;const row=rows[0],owner=reusableBinding?.ownerId??legacyBinding?.ownerId;
+   if(!owner||row.owner!==owner)return false;
+   const saved=readHistoricalWork(row.event_id);
+   if(row.state==='blocked'){
+    const {code,diagnostic}=decodeInvocationError(row.last_error);
+    if(!saved||saved.approval.enrollmentId!==enrollmentId||enrollmentId===reusableBinding?.enrollmentId||typeof readRetiredConsumed!=='function'
+     ||code!=='groq_request_rejected'||diagnostic?.phase!=='http'||diagnostic.code!=='http_rejected'||diagnostic.httpStatus!==401
+     ||!integer(row.attempt)||row.attempt<1||row.response_id!==null||row.result_json!==null||row.claimed_by!==null||row.claimed_until!==null)return false;
+    const marker=readRetiredConsumed(),startedAt=Date.parse(marker?.startedAt);
+    return exact(marker,['v','provider','model','owner','task','requestId','invocationId','startedAt','state'])
+     &&marker.v===1&&marker.provider==='groq'&&marker.model==='openai/gpt-oss-20b'&&marker.owner===row.owner&&marker.task===row.task
+     &&marker.requestId===row.event_id&&marker.invocationId===row.event_id&&marker.state==='consumed-before-io'
+     &&integer(startedAt)&&startedAt>=row.created_at&&startedAt<=row.updated_at&&new Date(startedAt).toISOString()===marker.startedAt;
+   }
+   if(!['invoking','uncertain','failed'].includes(row.state))return false;
+   if(saved)return saved.approval.enrollmentId===enrollmentId;
+   if(row.task!==legacyBinding?.taskId)return false;
+   const associations=db.prepare('SELECT nonce,expires FROM relay_nonces WHERE nonce GLOB ? LIMIT 2').all(PREFIX+'enrollment:*:'+row.event_id);
+   return associations.length===1&&associations[0].nonce===PREFIX+'enrollment:'+enrollmentId+':'+row.event_id&&associations[0].expires===ASSOCIATION_EXPIRY&&hex(row.event_id);
+  }catch{return false;}
  }
  function reconcileEligible(ids){
   if(!Array.isArray(ids)||ids.length>8||ids.some(id=>!hex(id)))stop('admission_scope_invalid');
@@ -386,7 +458,7 @@ function createStore({dbPath,now=Date.now,randomNonce=()=>randomBytes(32).toStri
    if(changed.changes!==1)return null;const claimed=get(row.event_id);return {...claimed,request_id:claimed.event_id};
   });
  }
- return Object.freeze({localTestOnly,mayInvoke:false,get,recordAttempt,issue,inspect,commit,commitSignedBridge,commitReusableBoard,getReusableBoard,getWorkspaceWork,commitWorkspace,saveWorkspaceDraft,getWorkspaceClient,getWorkspaceDraft,getWorkspaceDraftByRef,workspaceReview,workspaceReviewedRef,workspaceReviewedRefs,workspaceProgressVersion,saveWorkspaceReview,listReusableBoard,commitReusableFixture,relay,isApproved,grantSeenElsewhere,legacyAdmissionReady,hasEnrollmentUncertainty,reconcileEligible,claimEligible,
+ return Object.freeze({localTestOnly,mayInvoke:false,get,recordAttempt,issue,inspect,commit,commitSignedBridge,commitReusableBoard,getReusableBoard,getWorkspaceWork,readHistoricalWork,commitWorkspace,saveWorkspaceDraft,getWorkspaceClient,getWorkspaceDraft,getWorkspaceDraftByRef,workspaceReview,workspaceReviewedRef,workspaceReviewedRefs,workspaceProgressVersion,saveWorkspaceReview,workspaceGrade,saveWorkspaceGrade,listReusableBoard,commitReusableFixture,relay,isApproved,grantSeenElsewhere,legacyAdmissionReady,hasEnrollmentUncertainty,pendingGrantAssociated,reconcileEligible,claimEligible,
   close(){db.close();if(!relayStore)relay.close();},
  });
 }

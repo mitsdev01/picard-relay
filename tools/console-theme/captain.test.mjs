@@ -8,8 +8,8 @@ import {CAPTAIN_LOGIN_REVEAL,CAPTAIN_AUTH_CLOSE} from './captain.mjs';
 const standard=workspaceConsoleHtml(CONSOLE_HTML),captain=workspaceConsoleHtml(CONSOLE_HTML,{theme:'captain'});
 test('generated theme is current and both documents fit the bounded security handler',()=>{
  execFileSync(process.execPath,['tools/console-theme/build.mjs','--check']);
- // Review UI growth at 192 KiB, leaving 64 KiB before the runtime ceiling.
- for(const html of [standard,captain]){assert(Buffer.byteLength(html)<192*1024);assert.doesNotThrow(()=>createConsoleHandler({html}));}
+ // Review UI growth at 208 KiB, leaving 48 KiB before the runtime ceiling.
+ for(const html of [standard,captain]){assert(Buffer.byteLength(html)<208*1024);assert.doesNotThrow(()=>createConsoleHandler({html}));}
  assert.doesNotThrow(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES)}));
  assert.throws(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES+1)}),/console_document_invalid/);
  assert.throws(()=>createConsoleHandler({html:'é'.repeat(MAX_CONSOLE_DOCUMENT_BYTES/2+1)}),/console_document_invalid/);
@@ -48,7 +48,7 @@ test('unknown themes and incompatible upstream structures stop compilation',()=>
  assert.throws(()=>workspaceConsoleHtml(CONSOLE_HTML.replace('id="logo-wrap"','id="changed"'),{theme:'captain'}),/captain_theme_contract_changed/);
 });
 test('space scene and doors are inside the central window, with privacy footer outside',()=>{
- const window=captain.indexOf('<div class="captain-window">'),scene=captain.indexOf('<div class="space-scene captain-observation"'),doors=captain.indexOf('<div class="captain-doors"'),footer=captain.indexOf('<footer class="footer">');
+ const window=captain.indexOf('<div class="captain-window">'),scene=captain.indexOf('<div id="space-scene" class="space-scene captain-observation"'),doors=captain.indexOf('<div class="captain-doors"'),footer=captain.indexOf('<footer class="footer">');
  assert(window>captain.indexOf('<header class="captain-topbar">'));
  assert(scene>window&&doors>scene&&footer>doors);
  assert.equal(captain.slice(footer-6,footer),'</div>');

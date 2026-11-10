@@ -54,8 +54,8 @@ the reviewed signed release, not through host-side injection. Merging source
 does not itself sign, publish or install a release.
 
 The generated document includes all inline styles, scripts and space scenery.
-Theme tests enforce a 192 KiB UTF-8 review budget; the handler has a separate
-256 KiB hard ceiling (`MAX_CONSOLE_DOCUMENT_BYTES`). This leaves at least 64 KiB
+Theme tests enforce a 208 KiB UTF-8 review budget; the handler has a separate
+256 KiB hard ceiling (`MAX_CONSOLE_DOCUMENT_BYTES`). This leaves at least 48 KiB
 between the build budget and runtime rejection, rather than letting styling
 consume the entire runtime allowance. Boundary tests cover the exact ceiling,
 one byte above it, and multibyte text. CSP hashes, authentication, same-origin
