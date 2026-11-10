@@ -78,3 +78,33 @@ No host enrollment, new access rule or production activation is claimed by this
 source change. A disconnected bridge has a disabled button with a short operator
 hint. Resetting an interrupted request is a manual evidence/recovery operation.
 
+
+## Upstream source notice (fork console)
+
+The signed-in System page separately reports **Brian’s upstream** in Admiral and
+Captain modes. The existing updater still follows the enrolled signed fork feed;
+its “up to date” result does not mean Brian’s main branch has been merged.
+
+The notice reads public GitHub metadata for the fixed upstream and fork main
+branches, pins both SHAs, and compares their ancestry with the physically verified
+installed source commit. It distinguishes upstream changes needing gated review,
+changes already merged into the fork but not installed, and a caught-up source.
+A force-pushed fork that no longer contains the installed source, incomplete data,
+timeout or GitHub rate limit is **Unable to check**, never “up to date.” The last
+successful observation remains dated; stale links and copied instructions are
+withheld. A source difference is advisory: it may contain only docs or companion
+changes and does not by itself require another signed core release.
+
+Only the existing owner-cookie-authenticated `/status` read can start a check.
+The process shares a ten-minute cache and failure backoff across sessions, with
+one in-flight check, a ten-second deadline and 512 KiB per response. Requests use
+fixed public GitHub endpoints, no GitHub token, no provider and no credentials.
+Checks occur while an owner reads status; there is no new timer, public route,
+proxy rule or host enrollment. Unauthenticated and machine-bearer clients cannot
+start them. Browser polling does not bypass the cache.
+
+Comparison links and **Copy update instructions** help start the existing gated
+process. They cannot merge, publish, install, reset stop evidence or authorize
+execution. Review the diff, qualify the exact source, then retain the required
+signing approval and host compatibility gates. The twenty-file artifact boundary
+and the separately installed companion/connector are unchanged.

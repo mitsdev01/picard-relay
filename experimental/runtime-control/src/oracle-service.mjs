@@ -120,7 +120,7 @@ import {createReceiver,healthDiagnostics} from './receiver.mjs';
 import {createSelectedAssistantAdapter} from './selected-assistant.mjs';
 import {createDispatcher} from './dispatcher.mjs';
 import {validConfig} from './protocol.mjs';
-import {fetchContributorCredits} from './https-fetch.mjs';
+import {fetchContributorCredits,createUpstreamNotice} from './https-fetch.mjs';
 
 // Opt-in console is protected by the administrator's HTTPS reverse proxy.
 // It exposes only a projection, never the ledger/control object or credentials.
@@ -247,7 +247,7 @@ export function createContributionRecognition({login,lookup=fetchContributorCred
 // Finite runtime ceiling; theme tests reserve separate upstream-growth headroom.
 export const MAX_CONSOLE_DOCUMENT_BYTES=256*1024;
 export function createConsoleHandler(options={}){
- const {enabled=false,html='',htmlThemes=null,getSnapshot,getRecentJobs,auth=null,origins=[],updates=createUpdateRequestBridge(),groqReplacement=null,recognition=''}=options;
+ const {enabled=false,html='',htmlThemes=null,getSnapshot,getRecentJobs,auth=null,origins=[],updates=createUpdateRequestBridge(),groqReplacement=null,recognition='',upstream=null}=options;
  // Presentation preference only: never a session or an authorization signal.
  if(htmlThemes!==null){
   if(!htmlThemes||Object.keys(htmlThemes).sort().join(',')!=='admiral,captain')throw Error('console_themes_invalid');
@@ -287,7 +287,7 @@ export function createConsoleHandler(options={}){
     const snapshot=getSnapshot();
     const display=typeof recognition==='function'?recognition():recognition;
     const keyReplacement=groqReplacement?.status();
-    return reply(200,{...snapshot,...(display?{recognition:display}:{}),...(keyReplacement?.enabled?{keyReplacement}:{})});
+    return reply(200,{...snapshot,...(display?{recognition:display}:{}),...(keyReplacement?.enabled?{keyReplacement}:{}),...(upstream?{upstream:upstream.read(snapshot?.release?.sourceCommit)}:{})});
    }
    if(path==='/updates'){
     if(!await auth.authenticate(tokenFrom(req)))return reply(401,{error:'auth_failed'});
@@ -607,12 +607,39 @@ else syncStealthVisibility();
 
 const STEALTH_CONTROLS='<button id="stealth-mode" type="button" aria-pressed="false" aria-keyshortcuts="Alt+Shift+S">Stealth mode</button><label id="stealth-settings" for="stealth-auto">Auto stealth<select id="stealth-auto"><option value="0">Off</option><option value="2">When tab is hidden</option><option value="4">After 5 minutes idle</option><option value="6">When hidden or idle</option></select></label>';
 
+const UPSTREAM_MARKUP=`<section class="technical upstream-notice" aria-labelledby="upstream-heading"><h2 id="upstream-heading">Brian’s upstream</h2><p id="upstream-state" role="status">Not checked</p><p class="subtle">Advisory source check. The updater above follows our signed fork feed. Upstream changes require gated review.</p><dl class="policy"><dt>Installed source</dt><dd id="upstream-installed">Unknown</dd><dt>Last incorporated</dt><dd id="upstream-incorporated">Unknown</dd><dt>Fork main</dt><dd id="upstream-fork">Unknown</dd><dt>Brian’s main</dt><dd id="upstream-latest">Unknown</dd><dt>Last successful check</dt><dd id="upstream-checked">Not checked</dd></dl><p id="upstream-deployment" class="subtle"></p><div class="update-actions"><a id="upstream-link" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>View upstream changes</a><a id="upstream-fork-link" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer" hidden>View fork changes</a><button id="upstream-copy" type="button" disabled>Copy update instructions</button></div><p id="upstream-copy-status" role="status"></p><p class="subtle">Checked during signed-in refreshes, at most once every 10 minutes. No automatic merge or upstream installation.</p></section>`;
+const UPSTREAM_SCRIPT=String.raw`
+let upstreamPrompt='';
+function renderUpstream(value){
+ const sha=s=>typeof s==='string'&&/^[a-f0-9]{40}$/.test(s);
+ const valid=value?.v===1&&['checking','unavailable','upstream_available','deployment_pending','current'].includes(value.state);
+ const recent=valid&&Number.isSafeInteger(value.checkedAt)&&value.checkedAt<=Date.now()+5000&&Date.now()-value.checkedAt<=15*60*1000;
+ const trusted=recent&&['installed','incorporated','fork','upstream'].every(k=>sha(value[k]))&&typeof value.upstreamPending==='boolean'&&typeof value.deploymentPending==='boolean';
+ const ready=trusted&&!['checking','unavailable'].includes(value.state);
+ const labels={checking:'Checking GitHub…',unavailable:'Unable to check upstream',upstream_available:'Upstream changes available — gated review required',deployment_pending:'Fork changes merged — deployment pending',current:'Caught up with the checked upstream source'};
+ $('upstream-state').textContent=valid&&(value.state==='checking'||value.state==='unavailable'||ready)?labels[value.state]:'Unable to check upstream';
+ for(const [id,key] of [['installed','installed'],['incorporated','incorporated'],['fork','fork'],['latest','upstream']])$('upstream-'+id).textContent=trusted?value[key].slice(0,12):'Unknown';
+ $('upstream-checked').textContent=valid&&Number.isSafeInteger(value.checkedAt)?new Date(value.checkedAt).toLocaleString():'Not checked';
+ $('upstream-deployment').textContent=ready&&value.deploymentPending?'Our fork also contains changes not installed on this relay.':'';
+ const link=$('upstream-link'),forkLink=$('upstream-fork-link');link.hidden=forkLink.hidden=!ready;link.removeAttribute('href');forkLink.removeAttribute('href');
+ upstreamPrompt='';$('upstream-copy').disabled=!ready;$('upstream-copy-status').textContent='';
+ if(!ready)return;
+ link.href='https://github.com/bmartynowicz/picard-relay/compare/'+value.incorporated+'...'+value.upstream;
+ forkLink.href='https://github.com/mitsdev01/picard-relay/compare/'+value.installed+'...'+value.fork;
+ upstreamPrompt='Review upstream updates for mitsdev01/picard-relay through our gated process. Observed installed source: '+value.installed+'; fork main: '+value.fork+'; Brian main: '+value.upstream+'. Recheck current identities and clean checkout first. Compare upstream changes, preserve Captain/Admiral UI, coding connector, trusted workspaces and Flockbay companion. Qualify source on Linux, review a PR, then obtain owner authorization for merge and publication. Keep GitHub environment approval and exact signed-envelope/companion compatibility gates. Check host readiness, preserve backups, ledger, markers and configuration, and verify installation and live UI separately. Do not call providers, submit coding tasks, clear STOP/HOLD/uncertainty, enable game execution or push to Brian’s repository. These observations are informational, not authorization to deploy.';
+}
+$('upstream-copy').addEventListener('click',async()=>{if(!upstreamPrompt)return;try{await navigator.clipboard.writeText(upstreamPrompt);$('upstream-copy-status').textContent='Update instructions copied.';}catch{$('upstream-copy-status').textContent='Clipboard unavailable. Use the comparison links to review changes.';}});
+`;
 export const CONSOLE_HTML=CONSOLE_SHELL_HTML
-  .replace('</style>',FEEDBACK_STYLE+STEALTH_STYLE+'#recognition{display:block;color:var(--accent)}.groq-key-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 18px}.feedback-dialog .groq-key-confirm{display:flex;gap:8px;align-items:baseline}.feedback-dialog .groq-key-confirm input{width:auto;flex:none}</style>')
+  .replace('<div class="technical"><h2>Release fingerprint</h2>',UPSTREAM_MARKUP+'<div class="technical"><h2>Release fingerprint</h2>')
+  .replace('function clearPrivate(){','function clearPrivate(){renderUpstream();')
+  .replace('statusFailed=true;','statusFailed=true;renderUpstream();')
+  .replace('motion();void boot();',UPSTREAM_SCRIPT+'\nmotion();void boot();')
+  .replace('</style>','.upstream-notice .update-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:16px 0}.upstream-notice a{color:var(--accent);text-underline-offset:3px}.upstream-notice p{overflow-wrap:anywhere}'+FEEDBACK_STYLE+STEALTH_STYLE+'#recognition{display:block;color:var(--accent)}.groq-key-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:10px 0 18px}.feedback-dialog .groq-key-confirm{display:flex;gap:8px;align-items:baseline}.feedback-dialog .groq-key-confirm input{width:auto;flex:none}</style>')
   .replace('<p>Picard Relay</p>','<p id="brand-name">Picard Relay</p>')
   .replace('id="training-rank" hidden></small>','id="training-rank" hidden></small><small id="recognition" hidden></small>')
   .replace('function clearPrivate(){','function clearPrivate(){\n showRecognition();resetGroqReplacement();')
-  .replace("render(project(await request('/status')));","const data=await request('/status');render(project(data));showRecognition(typeof data.recognition==='string'?data.recognition:'');if(!keySaving)renderGroqReplacement(data.keyReplacement);")
+  .replace("render(project(await request('/status')));","const data=await request('/status');render(project(data));renderUpstream(data.upstream);showRecognition(typeof data.recognition==='string'?data.recognition:'');if(!keySaving)renderGroqReplacement(data.keyReplacement);")
   .replace('<summary aria-label="Documentation and account"','<summary id="console-tools-toggle" aria-label="Documentation and account"')
   .replace('<button class="logout"',STEALTH_CONTROLS+'<button id="feedback-open" type="button" hidden>Feedback</button><button class="logout"')
   .replace('<button id="hud-next"','<button id="hud-stealth" type="button" aria-keyshortcuts="Alt+Shift+S">Stealth <kbd>Alt+Shift+S</kbd></button><button id="hud-next"')
@@ -660,7 +687,7 @@ export async function startOracleService(config,assistantAdapter,{intervalMs=100
  // Its console must use that same owner scope, not the legacy catalogue task.
  const consoleScope={ownerId:config.ownerId,allowedTaskId:config.admissionEnabled===true&&config.admissionReusableBoardEnabled===true?'':config.allowedTaskId??''};
  const recognition=config.consoleEnabled===true&&config.recognitionLogin?createContributionRecognition({login:config.recognitionLogin}):null;
- const consoleHandler=createConsoleHandler({enabled:config.consoleEnabled===true,html:admission?.html??CONSOLE_HTML,htmlThemes:admission?.htmlThemes??null,auth:consoleAuth,origins:config.consoleOrigins,recognition:recognition?.read??config.recognition,updates:createUpdateRequestBridge({enabled:process.env.BRIDGE_OWNER_UPDATES_ENABLED==='true'}),groqReplacement:admission?.groqReplacement,getSnapshot:()=>consoleSnapshot(control.health(),store.scopedStats(consoleScope),new Date(),consoleScope.allowedTaskId?'task':'owner',readResources(),admission?.groqKeyExpiresAt),getRecentJobs:query=>store.recentJobs({...query,...consoleScope})});
+ const consoleHandler=createConsoleHandler({enabled:config.consoleEnabled===true,html:admission?.html??CONSOLE_HTML,htmlThemes:admission?.htmlThemes??null,auth:consoleAuth,origins:config.consoleOrigins,recognition:recognition?.read??config.recognition,upstream:createUpstreamNotice(),updates:createUpdateRequestBridge({enabled:process.env.BRIDGE_OWNER_UPDATES_ENABLED==='true'}),groqReplacement:admission?.groqReplacement,getSnapshot:()=>consoleSnapshot(control.health(),store.scopedStats(consoleScope),new Date(),consoleScope.allowedTaskId?'task':'owner',readResources(),admission?.groqKeyExpiresAt),getRecentJobs:query=>store.recentJobs({...query,...consoleScope})});
  const server=createServer(async(req,res)=>{try{
   // TLS/auth for the opt-in console terminate at the approved reverse proxy.
   if(admission&&await admission.handler(req,res))return;
