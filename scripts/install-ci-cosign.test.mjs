@@ -2,7 +2,29 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
-import {ASSETS,digestBoundedFile,installVerifiedCosign} from './install-ci-cosign.mjs';
+import {ASSETS,digestBoundedFile,installVerifiedCosign,downloadAsset} from './install-ci-cosign.mjs';
+test('asset authentication stays on stdin and only targets the fixed GitHub API',async()=>{
+ const token='synthetic_test_token';
+ for(const asset of ASSETS){
+  let recorded;
+  const spawn=(command,args,options,done)=>({stdin:{on(){},end(input){recorded={command,args,options,input};done(null);}}});
+  await downloadAsset(asset,'/private/asset',{token,spawn});
+  assert.equal(recorded.command,'/usr/bin/curl');
+  assert.equal(JSON.stringify(recorded.args).includes(token),false);
+  assert.equal(recorded.options.env.GH_TOKEN,undefined);
+  assert.equal(recorded.options.env.GITHUB_TOKEN,undefined);
+  assert.equal(recorded.input.includes(token),asset.url.startsWith('https://api.github.com/'));
+  assert.deepEqual(recorded.args.slice(0,3),['--disable','--config','-']);
+  assert.ok(recorded.args.includes('--location'));assert.ok(!recorded.args.includes('--location-trusted'));
+ }
+});
+test('download diagnostics never echo credentials and malformed tokens cannot inject config',async()=>{
+ const token='synthetic_secret';
+ const spawn=(command,args,options,done)=>({stdin:{on(){},end(){done(Error('sensitive '+token));}}});
+ await assert.rejects(downloadAsset(ASSETS[0],'/private/asset',{token,spawn}),{message:'cosign_download_failed:bootstrap'});
+ await assert.rejects(downloadAsset(ASSETS[0],'/private/asset',{token:'bad\nurl = malicious',spawn}),/token_invalid/);
+ await assert.rejects(downloadAsset({...ASSETS[0],url:'https://example.com'},'/private/asset',{token,spawn}),/asset_not_allowed/);
+});
 function fixture({badDigest,downloadError,verifyError}={}){
  const calls=[];let signatures=0;
  return {calls,d:{file:name=>'/private/'+name,async download(a){calls.push(['download',a.name]);if(a.name===downloadError)throw Error('download failed');},async digest(a){return a.name===badDigest?'0'.repeat(64):a.sha256;},async executable(name){calls.push(['executable',name]);},async run(name,args){calls.push(['verify',name,args]);if(++signatures===verifyError)throw Error('signature rejected');},async install(name){calls.push(['install',name]);}}};
