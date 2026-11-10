@@ -4,7 +4,7 @@ import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import {ASSETS,digestBoundedFile,installVerifiedCosign,downloadAsset} from './install-ci-cosign.mjs';
 test('asset authentication stays on stdin and only targets the fixed GitHub API',async()=>{
- const token='synthetic_test_token';
+ const token='synthetic_test.jwt-segment~+/==';
  for(const asset of ASSETS){
   let recorded;
   const spawn=(command,args,options,done)=>({stdin:{on(){},end(input){recorded={command,args,options,input};done(null);}}});
@@ -22,7 +22,8 @@ test('download diagnostics never echo credentials and malformed tokens cannot in
  const token='synthetic_secret';
  const spawn=(command,args,options,done)=>({stdin:{on(){},end(){done(Error('sensitive '+token));}}});
  await assert.rejects(downloadAsset(ASSETS[0],'/private/asset',{token,spawn}),{message:'cosign_download_failed:bootstrap'});
- await assert.rejects(downloadAsset(ASSETS[0],'/private/asset',{token:'bad\nurl = malicious',spawn}),/token_invalid/);
+ for(const token of ['bad\nurl = malicious','bad\rheader','bad"header','bad\\header','bad token','bad\ttoken'])
+  await assert.rejects(downloadAsset(ASSETS[0],'/private/asset',{token,spawn}),/token_invalid/);
  await assert.rejects(downloadAsset({...ASSETS[0],url:'https://example.com'},'/private/asset',{token,spawn}),/asset_not_allowed/);
 });
 function fixture({badDigest,downloadError,verifyError}={}){
