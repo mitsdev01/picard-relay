@@ -169,3 +169,18 @@ The fork's existing machine-client draft bindings retain their durable keys.
 New upstream tool credentials use a separate `tool-client` namespace to avoid
 colliding with those bindings. Restart/revocation coexistence tests cover both;
 this source merge does not enroll a tool or grant additional laptop scopes.
+
+### Captain cockpit framing
+
+Captain owns its cockpit shell geometry as well as its reading window. At desktop
+and laptop widths it retains the two-column grid, header and privacy footer when
+cockpit mode opens. Its instruments use a flat burgundy panel; Admiral's curved
+dashboard and arc positioning remain exclusive to Admiral. Shared navigation,
+readouts, authentication, five-click badge toggle and motion preferences remain
+unchanged. Narrow screens wrap the instruments and allow vertical scrolling.
+
+When checking a theme update, enter cockpit mode before measuring layout: the
+Captain window must have nonzero width and height, the header must stay above it,
+and open reading panels must remain above the instruments. Exercise System and
+Jobs, close/reopen panels, toggle cockpit twice, and resize across 900/901px and
+1100px. Checking the normal workspace alone does not cover cockpit's CSS cascade.
