@@ -13,6 +13,14 @@ Picard Relay accepts a narrowly approved AI request, records it durably, sends i
 
 **Building or operating?** [Architecture](ARCHITECTURE.md) · [API](API.md) · [Operations](OPERATIONS.md) · [Development](DEVELOPMENT.md) · [Coding-agent workflow](../experimental/compute-broker/CODING-WORKFLOW.md) · [Cursor coding connector](CURSOR-CODING-CONNECTOR.md)
 
+**CLI task workflow:** [Focused evidence, matched defaults and correction accounting](CLI-WORKFLOW.md)
+
+**AI workspace access:** [Read-only workspace MCP](WORKSPACE-MCP.md) · [Machine-readable contract](workspace-mcp-contract.json)
+
+**Approved coding tasks:** [Independent tool access and request handoff](WORKSPACE-AGENT.md) · [Agent contract](workspace-agent-contract.json)
+
+**Owner CLI:** [Remember the Windows owner session securely](CLI-OWNER-SESSION.md)
+
 **Updating your relay?** [System update button and host connection](OWNER-UPDATES.md)
 
 **This fork:** [Preserving the connector and companion across updates](FORK-UPDATES.md)

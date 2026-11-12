@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-11-08",
+  "updatedAt": "2026-11-12",
   "project": "Picard Relay",
   "summary": "Self-hosted Node.js and SQLite delivery layer for exact approved AI requests, durable one-shot invocation and saved-result recovery.",
   "documentationIndex": "docs/README.md",
@@ -101,6 +101,22 @@
     }
   },
   "components": [
+    {
+      "path": "tools/workspace-mcp.mjs",
+      "role": "local read-only owner-workspace MCP stdio adapter; existing authenticated HTTPS GETs, outside signed runtime"
+    },
+    {
+      "path": "tools/workspace-readonly.mjs",
+      "role": "fixed-origin GET-only workspace client with enrolled tool access or protected owner sessions, bounded data and saved-answer integrity checks"
+    },
+    {
+      "path": "tools/workspace-agent-mcp.mjs",
+      "role": "opt-in local stdio adapter adding inert drafts and exact owner-approved submission; no approval tool or automatic login"
+    },
+    {
+      "path": "tools/workspace-access.mjs",
+      "role": "owner-only enrollment, revocation and exact-draft approval; protected local tool cache, outside signed runtime"
+    },
     {
       "path": "experimental/runtime-control/src/oracle-service.mjs",
       "role": "service, configuration, owner auth, typed status, base console"
@@ -214,6 +230,9 @@
     "npm run docs:check"
   ],
   "guides": [
+    "docs/WORKSPACE-AGENT.md",
+    "docs/WORKSPACE-MCP.md",
+    "docs/CLI-OWNER-SESSION.md",
     "docs/QUICKSTART.md",
     "docs/CONSOLE-WORKSPACE.md",
     "docs/COCKPIT-TOUR.md",
