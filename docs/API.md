@@ -138,6 +138,40 @@ The Codex completion recorder accepts this ID with `--comparison` and
 reasoning effort. It preserves the recorded usage and any existing explicit
 comparison.
 
+Start each side of a comparison in its own Codex chat. Later completed turns
+in that chat count toward that side automatically when recorded with the
+updated notifier. Keep unrelated work in a separate chat. Savings shows each
+side's full token total, fresh input plus output, and the follow-up subtotal.
+The original records remain available as individual turns.
+
+To attach an already recorded correction from another chat, use the two full
+usage record IDs. The dedicated usage token authorizes the link for its owner.
+An exact retry is safe. A turn can count toward only one original run.
+
+```sh
+node tools/codex-usage-notify.mjs --endpoint "$SAVINGS_ENDPOINT" --token-file "$SAVINGS_TOKEN_FILE" \
+  --attach "$FIX_RUN_ID" --follow-up-to "$ORIGINAL_RUN_ID"
+```
+
+Install the server update before replacing the completion notifier. The
+comparison records still accept usage from earlier notifiers.
+
+Authenticated `GET /status` includes `codexUsage.rolling` alongside the 12 recent
+`runs`. The server computes it from the owner's retained history, not just those
+12 rows. `windowSize` is 20; `sampleCount` counts the latest eligible comparisons
+and `eligibleCount` counts all eligible retained comparisons. `baselineCredits`,
+`assistedCredits`, `savedCredits` and `savedPercent` use full recorded Codex totals.
+The percentage is the difference of combined totals divided by the combined
+baseline, including negative results. Empty totals and percentage are `null`.
+`increasedCount` counts selected comparisons that cost more; `fromRecordedAt` and
+`toRecordedAt` bound their latest activity, including corrections.
+`excluded` counts paired legacy, incomplete and unpriced workflows. Unpaired
+turns do not enter the window. Both workflows must be complete, have finite
+credit estimates, and have a positive baseline. Provider tokens have no Codex
+credit conversion. A correction changes its original pair rather than adding a
+new sample. Older finishing-only comparisons remain available without inventing
+missing preparation or provider usage.
+
 ### Prepare context before starting Codex
 
 For a self-contained brief, send the brief directly to Codex. When an existing
@@ -148,13 +182,54 @@ saved result export to prepare the first prompt.
 node tools/codex-handoff.mjs --brief task.txt --context sources.txt --result picard.json | codex exec --sandbox read-only -
 ```
 
+Supply an acceptance checklist with `--acceptance checklist.txt` when the task
+has specific checks. The helper keeps those criteria in the first prompt for
+both the original-source and Picard-assisted paths, including a fallback.
+Use the same checklist for both sides of a Savings comparison so the first
+draft can address every check before review. The JavaScript API accepts the
+same text as `acceptanceCriteria`.
+
+Run deterministic acceptance checks locally after drafting, so a passing
+answer can complete without another model call to run the check. Supply a
+JSON array of operator-written checks with a `key`, case-insensitive regular
+expression `patterns`, and a short source-backed `fact` for a correction.
+Every pattern in a check must match. For example, a trigger check can require
+both `TAP` and `ON_VISIBLE`.
+
+```sh
+node tools/codex-handoff.mjs --check answer.txt --checks checks.json
+```
+
+The command prints `passed` and `missing` fields and exits 1 when a check
+fails. Use missing checks to request a correction and record that Codex turn
+in the original Savings comparison. Review factual meaning against the
+sources as well as checking the declared patterns.
+
 The helper checks that the saved answer is complete and matches its SHA-256.
 It uses the proposal only when the prepared prompt is at least 512 bytes
 smaller and at least 25% shorter in UTF-8. It keeps the original context if
 the proposal is missing, rejected, or fails validation. The byte budget is a
 routing heuristic. Measure Codex usage to determine the effect on tokens.
+It does not predict credit savings: losing cached input can outweigh a smaller
+prompt. Savings shows uncached input, cached input, output and an estimated
+Standard credit total using GPT-6.1 Sol rates dated 11 November 2026 from the
+[Codex credit rate card](https://learn.chatgpt.com/docs/pricing#token-rates).
+Every linked follow-up contributes to those totals. An unrecognized model
+in either the original run or a correction makes that side's estimate
+unavailable. Speed multipliers, Picard provider usage, billed credits and
+included subscription allowance are outside this estimate.
 Picard output stays untrusted reference data. The helper prepares text locally
 and leaves the relay's request approval and provider limits in place.
+
+In a working chat that already contains the exact source material, retain that
+chat and its existing prefix. Do not paste a second copy or start a fresh chat
+solely to consume a summary. `--source-in-context` (JavaScript:
+`sourceAlreadyInContext: true`) returns just the brief and acceptance criteria.
+Send that result to the existing chat; the flag cannot check another chat's
+history and must never be used to omit sources from a fresh chat or after
+compaction has removed them. Cache hits remain a provider decision. For paired
+tests keep model, effort, fixed instructions and source evidence matched, retain
+the observed cache breakdown, and count every paid correction or warm-up.
 
 Preparing the context before launch avoids a model call to retrieve it. For
 text-only reviews that need no integrations or project instructions, use a

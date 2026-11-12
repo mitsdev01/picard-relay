@@ -150,3 +150,22 @@ controls. Login opens the Captain cockpit while retaining that preference;
 sign-out clears private state before closing it. Native Codex Savings uses the
 same authenticated data and rendering in both themes. The 224 KiB review budget
 accommodates the upstream Savings UI while retaining the 256 KiB hard ceiling.
+
+## November 12 upstream integration
+
+Captain keeps its vertical navigation at widths of 901px and above; smaller
+windows use a burgundy compact navigation bar. The upstream folding-deck
+controls retain their IDs and shared behavior: Captain places the cockpit
+button in its header and windshield preferences in Settings. The reading deck
+stays inside Captain's viewing window, preserving its doors and login/logout
+presentation hooks. Admiral retains the upstream layout.
+
+Captain's composed CSS is whitespace-compacted without changing quoted strings
+or application scripts. The security handler remains bounded at 256 KiB and
+theme tests enforce a 255 KiB review budget; future upstream growth must pass
+that check before publication.
+
+The fork's existing machine-client draft bindings retain their durable keys.
+New upstream tool credentials use a separate `tool-client` namespace to avoid
+colliding with those bindings. Restart/revocation coexistence tests cover both;
+this source merge does not enroll a tool or grant additional laptop scopes.

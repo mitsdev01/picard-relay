@@ -1,6 +1,6 @@
 import {DatabaseSync} from 'node:sqlite';
 import {canonical,validateWork} from './protocol.mjs';
-import {encodeInvocationError,decodeInvocationError,isIncompleteDiagnostic} from './adapters.mjs';
+import {encodeInvocationError,decodeInvocationError,isIncompleteDiagnostic,sanitizeProviderUsage} from './adapters.mjs';
 // Unserializable proof: created only after the terminal SQLite transaction
 // commits. A row read back after restart, copied object or failed commit is not
 // authority to acknowledge an adapter's current reservation.
@@ -45,41 +45,188 @@ function openCodexUsage(db,owner){
   owner TEXT NOT NULL,id TEXT NOT NULL,recorded_at INTEGER NOT NULL,comparison_id TEXT,variant TEXT,record TEXT NOT NULL,
   PRIMARY KEY(owner,id),UNIQUE(owner,comparison_id,variant)
  );
- CREATE INDEX IF NOT EXISTS relay_codex_usage_time ON relay_codex_usage(owner,recorded_at DESC,id);`);
+ CREATE INDEX IF NOT EXISTS relay_codex_usage_time ON relay_codex_usage(owner,recorded_at DESC,id);
+ CREATE TABLE IF NOT EXISTS relay_codex_followups(
+  owner TEXT NOT NULL,id TEXT NOT NULL,original_id TEXT NOT NULL,PRIMARY KEY(owner,id)
+ );
+ CREATE INDEX IF NOT EXISTS relay_codex_followups_original ON relay_codex_followups(owner,original_id);
+ CREATE TABLE IF NOT EXISTS relay_codex_workflows(owner TEXT NOT NULL,comparison_id TEXT NOT NULL,variant TEXT NOT NULL,record TEXT NOT NULL,PRIMARY KEY(owner,comparison_id,variant));
+ CREATE TABLE IF NOT EXISTS relay_codex_workflow_calls(owner TEXT NOT NULL,comparison_id TEXT NOT NULL,ref TEXT NOT NULL,recorded_at INTEGER NOT NULL,PRIMARY KEY(owner,comparison_id,ref));`);
  const byId=db.prepare('SELECT record FROM relay_codex_usage WHERE owner=? AND id=?');
- const byPair=db.prepare('SELECT record FROM relay_codex_usage WHERE owner=? AND comparison_id=? AND variant=?');
  const insert=db.prepare('INSERT OR IGNORE INTO relay_codex_usage(owner,id,recorded_at,comparison_id,variant,record) VALUES(?,?,?,?,?,?)');
- const recent=db.prepare('SELECT record FROM relay_codex_usage WHERE owner=? ORDER BY recorded_at DESC,id LIMIT 12');
+ const recent=db.prepare(`SELECT record,original_id FROM relay_codex_usage AS runs
+  LEFT JOIN relay_codex_followups AS fixes ON fixes.owner=runs.owner AND fixes.id=runs.id
+  WHERE runs.owner=? ORDER BY recorded_at DESC,runs.id LIMIT 1000`);
+ const followUp=db.prepare('SELECT original_id FROM relay_codex_followups WHERE owner=? AND id=?');
+ const hasFollowUps=db.prepare('SELECT 1 FROM relay_codex_followups WHERE owner=? AND original_id=? LIMIT 1');
+ const insertFollowUp=db.prepare('INSERT INTO relay_codex_followups(owner,id,original_id) VALUES(?,?,?)');
  const prune=db.prepare('DELETE FROM relay_codex_usage WHERE owner=? AND id IN (SELECT id FROM relay_codex_usage WHERE owner=? ORDER BY recorded_at DESC,id LIMIT -1 OFFSET 1000)');
- return {
-  record(value){
-   const run=codexUsageRecord(value);
-   if(!run)return 'invalid';
-   const json=canonical(run);
-   db.exec('BEGIN IMMEDIATE');
-   try{
-    const added=insert.run(owner,run.id,run.recordedAt,run.comparisonId,run.variant,json).changes===1;
-    const status=added?'saved':byId.get(owner,run.id)?.record===json?'duplicate':'conflict';
-    if(added)prune.run(owner,owner);
-    db.exec('COMMIT');
-    return status;
-   }catch(error){db.exec('ROLLBACK');throw error;}
-  },
-  list(){
-   return recent.all(owner).map(({record})=>{
-    const run=JSON.parse(record);
+ const pruneLinks=db.prepare('DELETE FROM relay_codex_followups WHERE owner=? AND id NOT IN (SELECT id FROM relay_codex_usage WHERE owner=?)');
+ const get=id=>JSON.parse(byId.get(owner,id)?.record??'null');
+ const isId=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
+ const workflowById=db.prepare('SELECT record FROM relay_codex_workflows WHERE owner=? AND comparison_id=? AND variant=?');
+ const workflowInsert=db.prepare('INSERT INTO relay_codex_workflows VALUES(?,?,?,?)');
+ const providerById=db.prepare('SELECT result_json,state,updated_at FROM relay_jobs WHERE owner=? AND event_id=?');
+ const linkedCalls=db.prepare('SELECT ref,recorded_at FROM relay_codex_workflow_calls WHERE owner=? AND comparison_id=? ORDER BY ref LIMIT 21');
+ function callRecord(value){
+  if(Object.keys(value).sort().join(',')!=='comparisonId,kind,ref,v'||value.v!==1||value.kind!=='picard-call'||!usageSlug(value.comparisonId)||!isId(value.ref))return 'invalid';
+  const existing=linkedCalls.all(owner,value.comparisonId);
+  if(existing.some(row=>row.ref===value.ref))return 'duplicate';
+  if(existing.length>=20)return 'conflict';
+  db.prepare('INSERT INTO relay_codex_workflow_calls VALUES(?,?,?,?)').run(owner,value.comparisonId,value.ref,Date.now());return 'saved';
+ }
+ function workflowRecord(value){
+  if(!value||Object.keys(value).sort().join(',')!=='comparisonId,kind,picardRefs,preparationIds,v,variant'
+   ||value.v!==1||value.kind!=='workflow'||!usageSlug(value.comparisonId)||!['baseline','assisted'].includes(value.variant)
+   ||![value.preparationIds,value.picardRefs].every(ids=>Array.isArray(ids)&&ids.length<=20&&ids.every(isId)&&new Set(ids).size===ids.length)
+   ||value.variant==='baseline'&&value.picardRefs.length)return 'invalid';
+  const record=canonical({...value,preparationIds:[...value.preparationIds].sort(),picardRefs:[...value.picardRefs].sort()});
+  return transaction(()=>{
+   const old=workflowById.get(owner,value.comparisonId,value.variant)?.record;
+   if(old)return old===record?'duplicate':'conflict';
+   workflowInsert.run(owner,value.comparisonId,value.variant,record);return 'saved';
+  });
+ }
+ function link(run,originalId,{allowPending=false}={}){
+  const existing=followUp.get(owner,run.id);
+  if(existing)return existing.original_id===originalId?'duplicate':'conflict';
+  const original=get(originalId);
+  if(run.variant!==null||hasFollowUps.get(owner,run.id)||followUp.get(owner,originalId)
+    ||(!original&&!allowPending)||(original&&run.recordedAt<original.recordedAt))return 'conflict';
+  insertFollowUp.run(owner,run.id,originalId);
+  return 'saved';
+ }
+ function transaction(write){
+  db.exec('BEGIN IMMEDIATE');
+  try{const result=write();db.exec(result==='conflict'?'ROLLBACK':'COMMIT');return result;}
+  catch(error){db.exec('ROLLBACK');throw error;}
+ }
+ function project(){
+   const entries=recent.all(owner).map(({record,original_id})=>({run:JSON.parse(record),originalId:original_id}));
+   const baselineByPair=new Map(),explicitAssisted=new Set(),followUps=new Map();
+   for(const {run,originalId} of entries){
+    if(run.variant==='baseline')baselineByPair.set(run.comparisonId,run);
+    if(run.variant==='assisted')explicitAssisted.add(run.comparisonId);
+    if(originalId){
+     if(!followUps.has(originalId))followUps.set(originalId,[]);
+     followUps.get(originalId).push(run);
+    }
+   }
+   const totals=run=>{
+    const fixes=(followUps.get(run.id)??[]).filter(fix=>fix.recordedAt>=run.recordedAt);
+    const followUpTokens=fixes.reduce((sum,fix)=>sum+fix.totalTokens,0);
+    const all=[run,...fixes];
+    const inputTokens=all.reduce((sum,row)=>sum+row.inputTokens,0);
+    const cachedInputTokens=all.reduce((sum,row)=>sum+row.cachedInputTokens,0);
+    const outputTokens=all.reduce((sum,row)=>sum+row.outputTokens,0);
+    // Dated Standard-rate estimate, not billed credits or included allowance.
+    // Unknown models in any correction make the whole-side estimate unavailable.
+    const standardCredits=all.every(row=>row.model==='gpt-6.1-sol')
+     ?((inputTokens-cachedInputTokens)*50+cachedInputTokens*2.5+outputTokens*250)/1_000_000:null;
+    const native={totalTokens:run.totalTokens+followUpTokens,inputTokens,cachedInputTokens,outputTokens,standardCredits,
+     freshTokens:run.totalTokens-run.cachedInputTokens+fixes.reduce((sum,fix)=>sum+fix.totalTokens-fix.cachedInputTokens,0),
+     followUpTokens,followUpCount:fixes.length,lastRecordedAt:fixes[0]?.recordedAt??run.recordedAt};
+    const raw=workflowById.get(owner,run.comparisonId,run.variant)?.record;
+    if(!raw)return native;
+    const scope=JSON.parse(raw),preps=scope.preparationIds.map(get),missing=[];
+    const ids=new Set(all.map(row=>row.id));
+    for(let i=0;i<preps.length;i++){
+     const row=preps[i];
+     if(!row||row.variant!==null||followUp.get(owner,row.id)||ids.has(row.id)||hasFollowUps.get(owner,row.id))missing.push('preparation');
+     else ids.add(row.id);
+    }
+    const preparation=preps.filter(row=>row&&row.variant===null&&!followUp.get(owner,row.id)&&!all.some(r=>r.id===row.id)&&!hasFollowUps.get(owner,row.id));
+    const linked=run.variant==='assisted'?linkedCalls.all(owner,run.comparisonId):[];
+    const refs=[...new Set([...scope.picardRefs,...linked.map(row=>row.ref)])];
+    const calls=refs.map(ref=>{
+     const row=providerById.get(owner,ref);let result=null;try{result=JSON.parse(row?.result_json??'null');}catch{}
+     const usage=sanitizeProviderUsage(result?.providerUsage);
+     if(!usage||row?.state!=='completed')missing.push('picard');
+     return {ref,state:row?.state??'unavailable',usage,recordedAt:row?.updated_at??0};
+    });
+    const codex=[...all,...preparation],providerTokens=calls.reduce((n,row)=>n+(row.usage?.totalTokens??0),0);
+    const preparationTokens=preparation.reduce((n,row)=>n+row.totalTokens,0);
+    const codexTokens=codex.reduce((n,row)=>n+row.totalTokens,0);
+    const codexCredits=codex.every(row=>row.model==='gpt-6.1-sol')?codex.reduce((n,row)=>n+((row.inputTokens-row.cachedInputTokens)*50+row.cachedInputTokens*2.5+row.outputTokens*250)/1_000_000,0):null;
+    const lastRecordedAt=Math.max(native.lastRecordedAt,...preparation.map(row=>row.recordedAt),...calls.map(row=>row.recordedAt),...linked.map(row=>row.recorded_at));
+    return {...native,lastRecordedAt,workflow:{complete:missing.length===0,missing:[...new Set(missing)],
+     totalTokens:missing.length?null:codexTokens+providerTokens,knownTokens:codexTokens+providerTokens,
+     codexTokens,codexCredits,cachedInputTokens:codex.reduce((n,row)=>n+row.cachedInputTokens,0),preparationTokens,preparationCount:scope.preparationIds.length,
+     finishingTokens:run.totalTokens,followUpTokens,followUpCount:fixes.length,
+     picardTokens:calls.every(row=>row.usage)?providerTokens:null,picardCalls:calls.length,calls,
+     sharedPreparationIds:scope.preparationIds,providerBilledUsd:null}};
+   };
+   const projected=entries.map(({run,originalId})=>{
     let comparisonId=run.variant==='assisted'?run.comparisonId:null;
-    if(run.variant===null&&run.tools.length&&!byPair.get(owner,run.id,'assisted'))comparisonId=run.id;
-    const baseline=comparisonId&&JSON.parse(byPair.get(owner,comparisonId,'baseline')?.record??'null');
+    if(run.variant===null&&!originalId&&run.tools.length&&!explicitAssisted.has(run.id))comparisonId=run.id;
+    const baseline=comparisonId&&baselineByPair.get(comparisonId);
     // A baseline recorded after a standalone Picard run can name that run's ID.
     // The comparison is projected at read time, keeping both saved records immutable.
     const inOrder=run.variant==='assisted'||baseline?.recordedAt>=run.recordedAt;
     const baselineTokens=baseline&&inOrder&&baseline.model===run.model&&baseline.effort===run.effort?baseline.totalTokens:null;
+    const comparison=baselineTokens===null?null:{id:comparisonId,baseline:totals(baseline),assisted:totals(run)};
     return {...run,baselineTokens,
      baselineFreshTokens:baselineTokens===null?null:baselineTokens-baseline.cachedInputTokens,
-     savedTokens:baselineTokens===null?null:baselineTokens-run.totalTokens};
+     savedTokens:baselineTokens===null?null:baselineTokens-run.totalTokens,
+     ...(originalId?{followUpTo:originalId}:{}),...(comparison?{comparison}:{})};
    });
-  }
+   const activity=run=>run.comparison?Math.max(run.comparison.baseline.lastRecordedAt,run.comparison.assisted.lastRecordedAt):run.recordedAt;
+   return projected.sort((a,b)=>activity(b)-activity(a)||a.id.localeCompare(b.id));
+ }
+ function overview(){
+  // Keep the recent rows and the wider rolling window on one SQLite snapshot.
+  db.exec('BEGIN');
+  try{
+   const projected=project(),eligible=[],excluded={legacy:0,incomplete:0,unpriced:0};
+   for(const row of projected){
+    const pair=row.comparison;
+    if(!pair)continue;
+    const b=pair.baseline.workflow,a=pair.assisted.workflow;
+    if(!b&&!a){excluded.legacy++;continue;}
+    if(!b?.complete||!a?.complete){excluded.incomplete++;continue;}
+    if(!Number.isFinite(b.codexCredits)||b.codexCredits<=0||!Number.isFinite(a.codexCredits)||a.codexCredits<0){excluded.unpriced++;continue;}
+    eligible.push({baseline:b.codexCredits,assisted:a.codexCredits,recordedAt:Math.max(pair.baseline.lastRecordedAt,pair.assisted.lastRecordedAt)});
+   }
+   const selected=eligible.slice(0,20),sampleCount=selected.length;
+   const sum=key=>selected.reduce((n,row)=>n+row[key],0);
+   const baselineCredits=sampleCount?sum('baseline'):null,assistedCredits=sampleCount?sum('assisted'):null;
+   const savedCredits=sampleCount?baselineCredits-assistedCredits:null;
+   const rolling={windowSize:20,sampleCount,eligibleCount:eligible.length,baselineCredits,assistedCredits,savedCredits,
+    savedPercent:sampleCount?savedCredits/baselineCredits*100:null,
+    increasedCount:selected.filter(row=>row.assisted>row.baseline).length,
+    fromRecordedAt:sampleCount?selected.at(-1).recordedAt:null,toRecordedAt:sampleCount?selected[0].recordedAt:null,excluded};
+   db.exec('COMMIT');return {runs:projected.slice(0,12),rolling};
+  }catch(error){db.exec('ROLLBACK');throw error;}
+ }
+ return {
+  record(value){
+   if(!value||typeof value!=='object'||Array.isArray(value))return 'invalid';
+   if(value.kind==='workflow')return workflowRecord(value);
+   if(value.kind==='picard-call')return transaction(()=>callRecord(value));
+   const {followUpTo,...fields}=value;
+   const run=codexUsageRecord(fields);
+   if(!run)return 'invalid';
+   if(followUpTo!==undefined&&(!isId(followUpTo)||followUpTo===run.id||run.variant!==null))return 'invalid';
+   const json=canonical(run);
+   return transaction(()=>{
+    const added=insert.run(owner,run.id,run.recordedAt,run.comparisonId,run.variant,json).changes===1;
+    if(!added&&byId.get(owner,run.id)?.record!==json)return 'conflict';
+    const linked=followUpTo===undefined?'duplicate':link(run,followUpTo,{allowPending:true});
+    if(linked==='conflict')return linked;
+    if(added&&prune.run(owner,owner).changes)pruneLinks.run(owner,owner);
+    return added||linked==='saved'?'saved':'duplicate';
+   });
+  },
+  attach(value){
+   if(!value||Object.keys(value).length!==2||!isId(value.id)||!isId(value.followUpTo)||value.id===value.followUpTo)return 'invalid';
+   return transaction(()=>{
+    const run=get(value.id),original=get(value.followUpTo);
+    if(!run||!original||(!original.variant&&!original.tools.length))return 'conflict';
+    return link(run,value.followUpTo);
+   });
+  },
+  list(){return overview().runs;},
+  overview
  };
 }
 // Production ledger contains immutable work/results, not replacement Board
@@ -140,6 +287,7 @@ export function createRelayStore({dbPath,now=Date.now,canAccept=()=>true}={}){
   const outcome=input.kind==='question'?{kind:'question',question:input.body.trim()}:{kind:'information'};
   if(input.kind==='question'&&input.body.trim().length>2000||input.outcomeKind!==outcome.kind)throw error('invalid_outcome');
   const result={v:1,eventId:p.eventId,ownerId:p.ownerId,taskId:p.taskId,requestId:p.requestId,grantId:p.grantId,assistantId:p.assistantId,payloadHash:p.payloadHash,responseId:`resp:${p.eventId}`,body:input.body.trim(),outcome};
+  if(Object.hasOwn(input,'providerUsage'))result.providerUsage=sanitizeProviderUsage(input.providerUsage);
   const encoded=canonical(result);if(row.result_json&&row.result_json!==encoded)throw error('idempotency_conflict');
   db.prepare('UPDATE relay_jobs SET response_id=?,result_json=?,updated_at=? WHERE event_id=?').run(result.responseId,encoded,now(),row.event_id);
   return {replayed:!!row.result_json,reply:{reply_id:result.responseId}};

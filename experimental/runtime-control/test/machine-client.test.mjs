@@ -14,6 +14,34 @@ function registryFor(token,{revoked=false}={}){
 function reviewRegistryFor(token,codingClientId,{revoked=false}={}){
  return parseMachineReviewClientRegistry(JSON.stringify({v:1,clients:[{id:'work-laptop-review',tokenSha256:createHash('sha256').update(token).digest('hex'),scopes:['workspace-review'],codingClientId,revoked}]}));
 }
+
+test('fork machine bindings coexist with upstream tool credentials without widening machine authority',async t=>{
+ const token=randomBytes(32).toString('base64url');
+ const f=await workspaceFixture({realMarkers:false,authenticateMachine:async value=>value===token?{id:'laptop',scope:'workspace-coding'}:null});
+ t.after(()=>f.close());
+ const machine={cookie:'',authorization:'Bearer '+token};
+ const draft=await f.request('/workspace/drafts',{headers:machine,body:f.brief()});
+ assert.equal(draft.status,201);
+ const enrolled=await f.request('/workspace/clients',{body:{label:'Independent tool',mode:'approved-work',lifetimeMs:3600000}});
+ assert.equal(enrolled.status,201);
+ const tool={cookie:'',authorization:'Bearer '+enrolled.body.token};
+ f.restart();
+ assert.equal((await f.request('/workspace/clients')).body.clients.length,1);
+ assert.equal((await f.request('/workspace/config',{headers:tool})).status,200);
+ assert.equal((await f.request('/workspace/drafts/'+draft.body.draft.payload.requestId,{headers:machine})).status,200);
+ for(const url of ['/workspace/clients','/workspace/history','/workspace/client-approvals']){
+  const get=await f.request(url,{headers:machine});
+  if(url==='/workspace/client-approvals')assert.equal(get.handled,false);
+  else assert.equal(get.status,403,url);
+  const post=await f.request(url,{headers:machine,body:{}});
+  assert(post.status===403||post.handled===false,url);
+ }
+ assert.equal((await f.request('/workspace/clients/'+enrolled.body.client.id+'/revoke',{body:{}})).status,200);
+ f.restart();
+ assert.equal((await f.request('/workspace/config',{headers:tool})).status,401);
+ assert.equal((await f.request('/workspace/drafts/'+draft.body.draft.payload.requestId,{headers:machine})).status,200);
+ assert.equal(f.calls,0);
+});
 test('Linux registry requires exact 0600 and rechecks revocation and file safety',{skip:process.platform!=='linux'},()=>{
  const dir=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),'machine-registry-')),file=path.join(dir,'clients.json');
  const token=randomBytes(32).toString('base64url');

@@ -3,17 +3,17 @@ import {CONSOLE_HTML as html} from '../src/oracle-service.mjs';
 import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 const script=html.match(/<script>\n([\s\S]*?)<\/script>/)[1],style=html.match(/<style>([\s\S]*?)<\/style>/)[1];
-assert.equal(createHash('sha256').update(script).digest('hex'),"496243849ef8d89882a9ecca45a0167ae4d61c8cb81c6b58c235ad02800834ce");
+assert.equal(createHash('sha256').update(script).digest('hex'),"da18d2202965011a247d0057575787b35fe31a706b3fd47e4f1bc4de7232a643");
 assert.equal(createHash('sha256').update(html.match(/id="logo" aria-hidden="true">([\s\S]*?)<\/pre>/)[1]).digest('hex'),"632fc5b24f76003e80bc7299ba9e404b3d8e01f7ab31563a492ae9b6421a0ca4");
-const noDisplayStorage=script.replace(/localStorage\.(?:getItem\((?:stealth|cockpit)Preference\)|setItem\(stealthPreference,String\(stealthFlags\)\)|setItem\(cockpitPreference,String\(cockpitFlags\)\))/g,'');
+const noDisplayStorage=script.replace(/localStorage\.(?:getItem\((?:(?:stealth|cockpit)Preference|'picard:windshield-readout')\)|setItem\(stealthPreference,String\(stealthFlags\)\)|setItem\(cockpitPreference,String\(cockpitFlags\)\)|setItem\('picard:windshield-readout',hidden\?'hidden':'shown'\))/g,'');
 assert.match(script,/const stealthPreference='picard:stealth';/);
-assert.ok(!/localStorage|sessionStorage|document\.cookie|innerHTML|setInterval/.test(noDisplayStorage));assert.ok(!/src=|@import|url\(/i.test(html.replace(/url\(#picard-metal-(?:face|recess)\)/g,'')));assert.deepEqual([...html.matchAll(/href="([^"]+)"/g)].map(match=>match[1]),['https://github.com/bmartynowicz/picard-relay/blob/main/docs/README.md','https://github.com/bmartynowicz/picard-relay/blob/main/docs/OPERATIONS.md#replace-a-groq-key','https://github.com/bmartynowicz/picard-relay/issues/new','https://console.groq.com/keys']);assert.match(html,/<a id="documentation"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*referrerpolicy="no-referrer"/);assert.ok(html.includes('<div id="private" hidden>'));assert.ok(html.includes('prefers-reduced-motion'));assert.ok(!html.includes('NCC-1701'));
+assert.ok(!/localStorage|sessionStorage|document\.cookie|innerHTML|setInterval/.test(noDisplayStorage));assert.ok(!/src=|@import|url\(/i.test(html.replace(/url\(#(?:picard-metal-(?:face|recess)|folding-arc-fill)\)/g,'')));assert.deepEqual([...html.matchAll(/href="([^"]+)"/g)].map(match=>match[1]),['https://github.com/bmartynowicz/picard-relay/blob/main/docs/README.md','https://github.com/bmartynowicz/picard-relay/blob/main/docs/OPERATIONS.md#replace-a-groq-key','https://github.com/bmartynowicz/picard-relay/issues/new','https://console.groq.com/keys']);assert.match(html,/<a id="documentation"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*referrerpolicy="no-referrer"/);assert.ok(html.includes('<div id="private" hidden>'));assert.ok(html.includes('prefers-reduced-motion'));assert.ok(!html.includes('NCC-1701'));
 for(const id of ['setup-code','new-password','confirm-password','login-password','replace-groq-secret'])assert.match(html,new RegExp('id="'+id+'" type="password"'));
 const health={v:1,observedAt:'2026-10-30T16:00:00Z',service:{ready:true,providerReady:false,resultRecoveryReady:true,acceptingNewWork:false,draining:false},jobs:{queued:0,invoking:0,completed:2,uncertain:0},release:{hash:'a'.repeat(64),version:null},updater:{state:'unknown'}};
 const ok=body=>({ok:true,status:200,json:async()=>body}),bad=(status,error)=>({ok:false,status,json:async()=>({error})});
 const flush=()=>new Promise(resolve=>setImmediate(resolve));
-function harness(handler,{jobsHandler,clock=Date,storage}={}){
- const animations=[];const element=()=>({_text:'',get textContent(){return this._text+this.children.map(n=>n.textContent).join('')},set textContent(v){this._text=String(v);this.children=[]},children:[],value:'',className:'',hidden:true,disabled:false,dataset:{},listeners:{},attrs:{},classList:{items:new Set(),toggle(n,v){v?this.items.add(n):this.items.delete(n)}},setAttribute(n,v){this.attrs[n]=v},removeAttribute(n){delete this.attrs[n];delete this[n];},addEventListener(n,fn){this.listeners[n]=fn},append(...nodes){this.children.push(...nodes)},replaceChildren(...nodes){this._text='';this.children=nodes},animate(frames,options){const a={frames,options,cancelled:false,cancel(){this.cancelled=true;this.oncancel?.()}};animations.push(a);return a}});
+function harness(handler,{jobsHandler,clock=Date,storage,manualAnimations=false}={}){
+ const animations=[];const element=()=>({_text:'',get textContent(){return this._text+this.children.map(n=>n.textContent).join('')},set textContent(v){this._text=String(v);this.children=[]},children:[],value:'',className:'',hidden:true,disabled:false,dataset:{},listeners:{},attrs:{},dispatchEvent(e){this.listeners[e.type]?.(e)},offsetWidth:100,removeAttribute(n){delete this.attrs[n];delete this[n];},hasAttribute(n){return n in this.attrs},focus(){},classList:{items:new Set(),toggle(n,v){v?this.items.add(n):this.items.delete(n)}},setAttribute(n,v){this.attrs[n]=v},addEventListener(n,fn){const old=this.listeners[n];this.listeners[n]=old?(...args)=>{old(...args);return fn(...args)}:fn},append(...nodes){this.children.push(...nodes)},replaceChildren(...nodes){this._text='';this.children=nodes},animate(frames,options){const a={frames,options,finished:Promise.resolve(),cancelled:false,cancel(){this.cancelled=true;this.oncancel?.()}};animations.push(a);if(!manualAnimations&&options.duration===145)queueMicrotask(()=>a.onfinish?.());return a}});
  const els=new Map([...html.matchAll(/id="([^"]+)"/g)].map(([,id])=>[id,element()]));
  const copied=[];
  for(const id of ['feedback-dialog','replace-groq-dialog']){
@@ -24,18 +24,78 @@ function harness(handler,{jobsHandler,clock=Date,storage}={}){
  const starAnimations=['space-plane-0','space-plane-1'].map(id=>{const a={playbackRate:1,currentTime:1234,changes:[],updatePlaybackRate(rate){this.playbackRate=rate;this.changes.push(rate);}};els.get(id).getAnimations=()=>[a];return a;});
  for(const el of els.values()){el.style={values:new Map(),setProperty(name,value){this.values.set(name,value)}};el.getBoundingClientRect=()=>({left:0,top:0,width:1200,height:800});}
  const dl={},wl={},ml={},pref={matches:false,addEventListener:(n,fn)=>ml[n]=fn};
- const document={visibilityState:'visible',getElementById:id=>{assert.ok(els.has(id));return els.get(id)},createElement:()=>element(),addEventListener:(n,fn)=>dl[n]=fn};
+ const deck=element(),shell=element(),sidebar=element(),arc=element();for(const el of [deck,shell,sidebar,arc]){el.style={setProperty(){},getPropertyValue(){return ''}};el.getBoundingClientRect=()=>({left:0,top:0,width:1200,height:100,bottom:100});}deck.querySelector=()=>arc;deck.querySelectorAll=()=>[];deck.contains=()=>false;arc.getClientRects=()=>[];
+ const document={querySelector:selector=>({'.cockpit-dash':deck,'.folding-shell':shell,'.sidebar':sidebar}[selector]),documentElement:{clientWidth:1200,clientHeight:800},visibilityState:'visible',getElementById:id=>{assert.ok(els.has(id));return els.get(id)},createElement:()=>element(),addEventListener:(n,fn)=>dl[n]=fn};
  const window={matchMedia:()=>pref,addEventListener:(n,fn)=>wl[n]=fn};
  const navigator={clipboard:{writeText:async text=>{copied.push(text);}}};
  let count=0;const requests=[],timers=new Map();
- vm.runInNewContext(script,{document,window,navigator,localStorage:storage,TextEncoder,AbortController,crypto:{randomUUID:()=>replacementId},Date:clock,queueMicrotask,setTimeout:fn=>{timers.set(++count,fn);return count},clearTimeout:id=>timers.delete(id),fetch:async(path,options)=>{assert.equal(options.credentials,'same-origin');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');assert.ok(['/auth/state','/auth/setup','/auth/login','/auth/logout','/status','/updates','/groq/key'].includes(path)||path==='/jobs'||path.startsWith('/jobs?cursor='));if(options.method==='POST')assert.equal(options.headers['Content-Type'],'application/json');requests.push({path,options});return path.startsWith('/jobs')?(jobsHandler?jobsHandler(path,options):ok({v:1,rows:[],nextCursor:null,observedAt:health.observedAt})):handler(path,options)}});
- return {get:id=>els.get(id),els,requests,timers,wl,dl,ml,pref,document,animations,starAnimations,copied,async submit(id){await els.get(id).listeners.submit({preventDefault(){}})},async click(id){await els.get(id).listeners.click()}};
+ vm.runInNewContext(script.replace('motion();void boot();','window.cockpitTest={get deck(){return openDeck},get instrument(){return openInstrument},get retracting(){return retractingDeck}};motion();void boot();'),{Event,ResizeObserver:class{observe(){}},getComputedStyle:()=>({getPropertyValue:()=>''}),document,window,navigator,localStorage:storage,TextEncoder,AbortController,crypto:{randomUUID:()=>replacementId},Date:clock,queueMicrotask,setTimeout:fn=>{timers.set(++count,fn);return count},clearTimeout:id=>timers.delete(id),fetch:async(path,options)=>{assert.equal(options.credentials,'same-origin');assert.equal(options.redirect,'error');assert.equal(options.cache,'no-store');assert.ok(['/auth/state','/auth/setup','/auth/login','/auth/logout','/status','/updates','/groq/key'].includes(path)||path==='/jobs'||path.startsWith('/jobs?cursor='));if(options.method==='POST')assert.equal(options.headers['Content-Type'],'application/json');requests.push({path,options});return path.startsWith('/jobs')?(jobsHandler?jobsHandler(path,options):ok({v:1,rows:[],nextCursor:null,observedAt:health.observedAt})):handler(path,options)}});
+ return {get:id=>els.get(id),get deckState(){return window.cockpitTest},els,requests,timers,wl,dl,ml,pref,document,animations,starAnimations,copied,async submit(id){await els.get(id).listeners.submit({preventDefault(){}})},async click(id){await els.get(id).listeners.click({currentTarget:els.get(id)})}};
 }
 const feedbackFlow=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok(health));
 await flush();
 assert.equal(feedbackFlow.get('recognition').hidden,true);
 assert.equal(feedbackFlow.get('groq-key').hidden,true);
 assert.equal(feedbackFlow.get('replace-groq-row').hidden,true);
+
+const side=(totalTokens,freshTokens,followUpTokens=0)=>({totalTokens,freshTokens,followUpTokens,followUpCount:Number(followUpTokens>0)});
+const savingsFlow=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok({...health,codexUsage:{state:'ready',runs:[
+ {id:'a',variant:'assisted',tools:['context'],model:'test',recordedAt:1,inputTokens:7900,cachedInputTokens:6900,outputTokens:100,totalTokens:8000,
+  comparison:{id:'first-example',baseline:side(12000,4000),assisted:side(10000,2500,2000)}},
+ {id:'b',variant:'assisted',tools:['context'],model:'test',recordedAt:2,inputTokens:8900,cachedInputTokens:7900,outputTokens:100,totalTokens:9000,
+  comparison:{id:'second-example',baseline:side(8000,3000),assisted:side(9000,1100)}}
+]}}));
+await flush();
+assert.equal(savingsFlow.get('codex-savings-headline').textContent,'Rolling savings not yet measured');
+assert.match(savingsFlow.get('codex-savings-note').textContent,/Waiting for a complete comparison/);
+const [firstSavings,secondSavings]=savingsFlow.get('codex-savings-comparisons').children;
+assert.match(firstSavings.textContent,/first-example.*Codex alone12,000 tokens.*With Picard10,000 tokens.*Includes 2,000 tokens across 1 follow-up turn/);
+assert.match(secondSavings.textContent,/second-example.*Codex alone8,000 tokens.*With Picard9,000 tokens.*12.5% more/);
+
+const creditFlow=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok({...health,codexUsage:{state:'ready',runs:[
+ {id:'c',variant:'assisted',tools:['context'],model:'gpt-6.1-sol',recordedAt:3,inputTokens:16500,cachedInputTokens:7168,outputTokens:921,totalTokens:17421,
+  comparison:{id:'cache-example',
+   baseline:{...side(18337,6049),inputTokens:17352,cachedInputTokens:12288,outputTokens:985,standardCredits:.53017},
+   assisted:{...side(17421,10253),inputTokens:16500,cachedInputTokens:7168,outputTokens:921,standardCredits:.71477}}}
+]}}));
+await flush();
+assert.equal(creditFlow.get('codex-savings-headline').textContent,'Rolling savings not yet measured');
+assert.match(creditFlow.get('codex-savings-comparisons').textContent,/34.8% more estimated Standard credits/);
+const creditCard=creditFlow.get('codex-savings-comparisons').textContent;
+assert.match(creditCard,/0.5302 estimated Standard credits/);
+assert.match(creditCard,/0.7148 estimated Standard credits/);
+assert.match(creditCard,/5,120 fewer cached input tokens/);
+assert.match(creditCard,/5% fewer total Codex tokens/);
+assert.match(creditCard,/include recorded preparation and linked fixes/);
+assert.match(creditCard,/Follow-up fixes: 0 turns · 0 tokens/);
+assert.match(creditCard,/How credits are estimated/);
+
+const w={complete:true,totalTokens:15000,knownTokens:15000,codexTokens:13000,codexCredits:.6,preparationTokens:2000,preparationCount:1,finishingTokens:10000,followUpTokens:1000,followUpCount:1,picardCalls:1,picardTokens:2000,missing:[]};
+const wholeFlow=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok({...health,codexUsage:{state:'ready',rolling:{sampleCount:1,savedPercent:25,savedCredits:.2,baselineCredits:.8,assistedCredits:.6,excluded:{legacy:1,incomplete:2,unpriced:3}},runs:[
+ {id:'whole',variant:'assisted',tools:['prepare_context'],model:'gpt-6.1-sol',recordedAt:3,inputTokens:10000,cachedInputTokens:0,outputTokens:1000,totalTokens:11000,
+  comparison:{id:'whole-example',baseline:{...side(12000,12000),workflow:{...w,picardCalls:0,picardTokens:0,totalTokens:14000,codexTokens:14000,codexCredits:.8}},assisted:{...side(11000,11000),workflow:w}}}
+]}}));await flush();
+assert.equal(wholeFlow.get('codex-savings-headline').textContent,'25% estimated Codex credits saved');
+const wholeCard=wholeFlow.get('codex-savings-comparisons').textContent;
+assert.match(wholeCard,/15,000 tokens across providers/);assert.match(wholeCard,/Preparation: 2,000 Codex tokens/);
+assert.match(wholeCard,/Picard: 1 call · 2,000 provider tokens/);assert.match(wholeCard,/Fixes: 1,000 Codex tokens/);
+assert.match(wholeCard,/Provider billed cost unavailable/);
+
+assert.match(wholeFlow.get('codex-savings-note').textContent,/Latest 1 complete comparison · 0.8000 credits on its own · 0.6000 with Picard/);
+assert.match(wholeFlow.get('codex-savings-coverage').textContent,/1 finishing-only, 2 incomplete and 3 without a usable credit estimate/);
+for(const [savedPercent,savedCredits,expected] of [[-9.405940594,-9.5,'9.4% more estimated Codex credits used'],[0,0,'No change in estimated Codex credits']]){
+ const flow=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok({...health,codexUsage:{state:'ready',runs:[],rolling:{sampleCount:20,savedPercent,savedCredits,baselineCredits:101,assistedCredits:101-savedCredits}}}));
+ await flush();assert.equal(flow.get('codex-savings-headline').textContent,expected);
+ assert.match(flow.get('codex-savings-note').textContent,/Latest 20 complete comparisons/);
+}
+const emptyRolling=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok({...health,codexUsage:{state:'ready',runs:[],rolling:{sampleCount:0,savedPercent:null}}}));
+await flush();assert.equal(emptyRolling.get('codex-savings-headline').textContent,'Rolling savings not yet measured');
+assert.match(html,/How rolling savings is measured/);assert.match(html,/larger tasks carry more weight/);
+wholeFlow.wl.pagehide();
+assert.equal(wholeFlow.get('codex-savings-headline').textContent,'Rolling savings not yet measured');
+assert.equal(wholeFlow.get('codex-savings-coverage').textContent,'');
+assert.equal(wholeFlow.get('codex-savings-comparisons').children.length,0);
+assert.doesNotMatch(wholeFlow.get('codex-savings-note').textContent,/0.8000|0.6000/);
 
 const displayPrefs=new Map(),displayStorage={getItem:key=>displayPrefs.get(key),setItem:(key,value)=>displayPrefs.set(key,value)};
 const displayStatus=async path=>path==='/auth/state'?ok({enrolled:true}):ok(health);
@@ -66,7 +126,7 @@ await flush();
 assert.equal(resumedFlight.get('cockpit-toggle').attrs['aria-pressed'],'true');
 assert.equal(resumedFlight.get('stars-toggle').attrs['aria-pressed'],'false');
 assert.equal(resumedFlight.get('hud-instruments').hidden,false);
-await resumedFlight.click('cockpit-toggle');
+await resumedFlight.click('workspace-toggle');
 assert.equal(resumedFlight.get('hud-instruments').hidden,true);
 await resumedFlight.click('stars-toggle');
 assert.equal(resumedFlight.get('hud-instruments').hidden,true);
@@ -325,7 +385,7 @@ await app.get('jobs-list').children[0].children[0].listeners.click();assert.equa
 for(const [filter,expected] of [['completed',1],['active',1],['attention',1],['all',3]]){app.get('jobs-filter').value=filter;app.get('jobs-filter').listeners.change();assert.equal(app.get('jobs-list').children.length,expected);assert.equal(app.get('job-details').hidden,true);assert.equal(app.get('detail-ref').textContent,'-');}
 assert.deepEqual(app.requests.slice(requestsBeforeNavigation).map(r=>({path:r.path,method:r.options.method})),[{path:"/updates",method:"GET"}]);assert.equal(app.get('activity-list').children.length,3);
 assert.equal(app.get('groq-availability').textContent,'Not available for new work');assert.match(app.get('groq-blocking').textContent,/unavailable|not supplied|not reported/i);
-assert.ok(html.includes('This console cannot submit or approve a request.'));assert.ok(html.includes('Filters apply to loaded rows only.'));assert.match(html,/<details class="technical"><summary>Request limits and safeguards<\/summary>/);assert.equal((html.match(/<details/g)||[]).length,4);assert.match(html,/<details class="console-info"><summary aria-label="About status and privacy">/);
+assert.ok(html.includes('This console cannot submit or approve a request.'));assert.ok(html.includes('Filters apply to loaded rows only.'));assert.match(html,/<details class="technical"><summary>Request limits and safeguards<\/summary>/);assert.equal((html.match(/<details/g)||[]).length,5);assert.match(html,/<details class="console-info"><summary aria-label="About status and privacy">/);
 
 for(const event of ['logout','401','403','pagehide']){
  let lost=false;const code=event==='403'?403:401;
@@ -444,11 +504,11 @@ for(const view of ['__proto__','constructor','toString','unknown',null,1,{toStri
 for(const flag of ['enabled','authenticated','expanded'])for(const value of [false,1,'true',null,undefined]){const result=hudFunction({enabled:true,authenticated:true,expanded:true,[flag]:value});assert.equal(result.panelVisible,false);if(flag!=='expanded')assert.equal(result.trayVisible,false);}
 const hud=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok(health));await flush();
 for(let i=0;i<5;i++)await hud.click('logo-wrap');assert.equal(hud.get('hud-instruments').hidden,false);assert.equal(hud.get('console-surface').dataset.hudExpanded,'false');
-const hudReads=hud.requests.length;await hud.click('hud-open-jobs');assert.equal(hud.get('console-surface').dataset.hudExpanded,'true');assert.equal(hud.get('private').dataset.width,'760');assert.equal(hud.get('view-jobs').hidden,false);
+const hudReads=hud.requests.length;await hud.click('fold-active');assert.equal(hud.get('console-surface').dataset.hudExpanded,'true');assert.equal(hud.get('private').dataset.width,'760');assert.equal(hud.get('view-jobs').hidden,false);
 const glassClick=target=>hud.get('console-surface').listeners.click({target});
 for(const id of ['nav-jobs','private','hud-open-jobs','refresh','logout']){glassClick(hud.get(id));assert.equal(hud.get('console-surface').dataset.hudExpanded,'true');}
 hud.get('console-tools').open=true;glassClick(hud.get('cockpit-glass'));assert.equal(hud.get('console-tools').open,false);assert.equal(hud.get('console-surface').dataset.hudExpanded,'false');assert.equal(hud.get('view-jobs').hidden,false);assert.equal(hud.requests.length,hudReads);
-await hud.click('hud-open-jobs');glassClick(hud.get('hud-instruments'));assert.equal(hud.get('console-surface').dataset.hudExpanded,'false');await hud.click('hud-open-jobs');
+await hud.click('fold-active');glassClick(hud.get('hud-instruments'));assert.equal(hud.get('console-surface').dataset.hudExpanded,'false');await hud.click('fold-active');
 await hud.click('hud-close');assert.equal(hud.get('console-surface').dataset.hudExpanded,'false');assert.equal(hud.requests.length,hudReads);await hud.click('hud-progress');assert.equal(hud.get('private').dataset.width,'660');hud.wl.keydown({key:'Escape'});assert.equal(hud.get('console-surface').dataset.hudExpanded,'false');
 await hud.click('logout');assert.equal(hud.get('hud-instruments').hidden,true);assert.equal(hud.get('hud-health').textContent,'Not checked');assert.equal(hud.get('hud-active').textContent,'—');assert.equal(hud.get('hud-done').textContent,'—');
 console.log('PASS windshield HUD: generated/reviewed state helper, exact booleans/view whitelist, compact instruments, fitting panels, minimize/Escape without network and private clearing.');
@@ -468,7 +528,7 @@ await flush();for(let i=0;i<5;i++)await power.click('logo-wrap');
 assert.equal(power.get('power-value').textContent,'100%');assert.equal(power.get('system-memory').textContent,'50%');assert.equal(power.get('power-relay').textContent,'24 MB');
 for(const a of power.starAnimations){assert.equal(a.playbackRate,1.3);assert.equal(a.currentTime,1234);}
 const powerReads=power.requests.length;await power.click('power-toggle');assert.equal(power.get('power-details').hidden,false);assert.equal(power.get('power-toggle').attrs['aria-expanded'],'true');
-power.wl.keydown({key:'Escape'});assert.equal(power.get('power-details').hidden,true);assert.equal(power.requests.length,powerReads);
+power.wl.keydown({key:'Escape'});await flush();assert.equal(power.get('power-details').hidden,true);assert.equal(power.requests.length,powerReads);
 const look=power.get('console-surface').listeners.pointermove,scene=power.get('space-scene');
 look({target:power.get('cockpit-glass'),pointerType:'mouse',clientX:1200,clientY:800});
 assert.equal(scene.style.values.get('--look-x'),'-14.00px');assert.equal(scene.style.values.get('--look-y'),'-10.00px');
@@ -499,4 +559,86 @@ for(const [resources,cpu,mem]of [
  const h=harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok({...health,observedAt:new Date(powerAt).toISOString(),resources}),{clock:PowerClock});await flush();
  assert.equal(h.get('power-value').textContent,cpu);assert.equal(h.get('power-memory').textContent,mem);assert.doesNotMatch([...h.els.values()].map(e=>e.textContent).join(' '),/PRIVATE/);
 }
-console.log('PASS resource projection: invalid/array/stale/future readings are unknown; memory remains independent of CPU; inline CSP content has canonical line endings.');
+
+// Exercise the shipped coordinator with manually finished animations. This
+// catches overlap and stale completion callbacks without asserting CSS strings.
+const panelStorage={getItem:key=>key==='picard:cockpit'?'3':null,setItem(){}};
+const readyPanels=()=>harness(displayStatus,{storage:panelStorage,manualAnimations:true});
+const openerFor={main:'nav-jobs',cpu:'power-toggle',auto:'stealth-auto-toggle'};
+const currentPanel=h=>h.deckState.instrument?.opener??h.deckState.deck?.opener;
+for(const [from,to] of [['main','cpu'],['cpu','main'],['main','auto'],['auto','main'],['cpu','auto'],['auto','cpu']]){
+ const h=readyPanels();await flush();
+ await h.click(openerFor[from]);
+ assert.equal(currentPanel(h),h.get(openerFor[from]));
+ await h.click(openerFor[to]);
+ const fold=h.animations.at(-1);
+ assert.equal(fold.options.duration,145);
+ assert.equal(currentPanel(h),undefined,'old logical panel closes before next: '+from+' to '+to);
+ assert.equal(h.deckState.retracting.opener,h.get(openerFor[from]));
+ fold.onfinish();
+ assert.equal(currentPanel(h),h.get(openerFor[to]));
+ assert.equal(h.deckState.retracting,null);
+ assert.equal(h.requests.filter(r=>r.options.method==='POST').length,0);
+}
+{
+ const h=readyPanels();await flush();await h.click('nav-jobs');
+ await h.click('power-toggle');const old=h.animations.at(-1);
+ await h.click('stealth-auto-toggle');old.onfinish();
+ assert.equal(currentPanel(h),h.get('stealth-auto-toggle'),'latest pending click wins');
+ await h.click('nav-system');const cancelled=h.animations.at(-1);
+ h.get('console-surface').listeners.click({target:h.get('cockpit-glass')});
+ cancelled.onfinish();assert.equal(currentPanel(h),undefined,'backdrop cancels queued opening');
+ await h.click('nav-jobs');await h.click('nav-jobs');const stale=h.animations.at(-1);
+ await h.click('nav-jobs');stale.onfinish();
+ assert.equal(currentPanel(h),h.get('nav-jobs'),'reopening same source ignores stale fold');
+ await h.click('power-toggle');const privateFold=h.animations.at(-1);
+ await h.click('stealth-mode');privateFold.onfinish();
+ assert.equal(currentPanel(h),undefined);assert.equal(h.deckState.retracting,null);
+ assert.equal(h.get('power-details').hidden,true);
+}
+{
+ const h=readyPanels();await flush();await h.click('power-toggle');
+ await h.click('stealth-auto-toggle');const fold=h.animations.at(-1);
+ await h.click('logout');fold.onfinish();
+ assert.equal(currentPanel(h),undefined,'auth loss cancels pending transitions');
+ assert.equal(h.get('power-details').hidden,true);
+ assert.equal(h.get('stealth-settings').hidden,true);
+ assert.equal(h.get('windshield-readout').hidden,true);
+}
+{
+ const prefs=new Map([['picard:cockpit','3']]),storage={getItem:k=>prefs.get(k),setItem:(k,v)=>prefs.set(k,v)};
+ const reading=()=>harness(async path=>path==='/auth/state'?ok({enrolled:true}):ok({...health,observedAt:new Date().toISOString()}),{storage,jobsHandler:async()=>ok({...page([completedJob]),observedAt:new Date().toISOString()})});
+ const h=reading();await flush();assert.equal(h.get('windshield-readout').hidden,false);
+ await h.click('windshield-dismiss');assert.equal(h.get('windshield-readout').hidden,true);
+ const reloaded=reading();await flush();assert.equal(reloaded.get('windshield-readout').hidden,true);
+ assert.equal(reloaded.get('windshield-restore').hidden,false);
+ await reloaded.click('windshield-restore');assert.equal(reloaded.get('windshield-readout').hidden,false);
+ assert.equal(prefs.get('picard:windshield-readout'),'shown');
+ assert.equal(reloaded.requests.filter(r=>r.options.method==='POST').length,0);
+}
+console.log('PASS cockpit coordination: all six handoffs, deferred opening, latest click wins, same-source reopen, backdrop/Stealth/auth cancellation, no request writes, remembered readout dismissal and restore.');
+
+// Real embedded geometry: reserve the HUD and use more of a short phone's
+// remaining windshield, without changing the established desktop/tall layout.
+const deckPositionCode=script.match(/function positionDeckPanel\(\)\{[\s\S]*?\n\}\nfunction updateDeckPanel/)[0].replace(/\nfunction updateDeckPanel$/,'');
+function panelGeometry({width,height,headerBottom,dashTop,sourceBottom,fromHud=false}){
+ const values=new Map(),source={offsetWidth:44,getBoundingClientRect:()=>({left:16,top:sourceBottom-44,bottom:sourceBottom,width:64,height:44}),setAttribute(){},removeAttribute(){}};
+ const context={document:{documentElement:{clientWidth:width,clientHeight:height}},openDeck:{opener:source,view:'jobs',maxWidth:760},deckOpener:source,
+  $:id=>id==='nav-jobs'?source:{},deckDash:{contains:()=>fromHud,getBoundingClientRect:()=>({top:dashTop})},deckSidebar:{getBoundingClientRect:()=>({bottom:headerBottom})},deckShell:{dataset:{},style:{setProperty:(k,v)=>values.set(k,v)}}};
+ vm.runInNewContext(deckPositionCode+';positionDeckPanel();',context);
+ return {height:parseFloat(values.get('--deck-height')),width:parseFloat(values.get('--deck-width')),edge:parseFloat(values.get('--deck-edge'))};
+}
+const shortPanel=panelGeometry({width:320,height:568,headerBottom:124,dashTop:422,sourceBottom:124});
+assert.ok(shortPanel.height>=270,'short phone uses the remaining windshield instead of the old 45%/78% cap');
+assert.ok(shortPanel.height<=422-8-132,'panel stays above the dock');
+const fromHudPanel=panelGeometry({width:320,height:568,headerBottom:124,dashTop:422,sourceBottom:490,fromHud:true});
+assert.ok(fromHudPanel.height>=270);assert.ok(fromHudPanel.height<=422-8-124-8);
+const tallPanel=panelGeometry({width:390,height:844,headerBottom:124,dashTop:700,sourceBottom:124});
+assert.equal(tallPanel.height,844*.45,'tall-phone sizing is unchanged');
+const desktopPanel=panelGeometry({width:1200,height:568,headerBottom:100,dashTop:400,sourceBottom:100});
+assert.equal(desktopPanel.height,(400-8-100)*.78,'desktop sizing is unchanged');
+for(const sample of [{width:320,height:360,headerBottom:150,dashTop:170,sourceBottom:150},{width:640,height:360,headerBottom:70,dashTop:230,sourceBottom:70}]){
+ const result=panelGeometry(sample);assert.ok(Number.isFinite(result.height)&&result.height>=0);
+ assert.ok(result.width<=sample.width-16);
+}
+console.log('PASS short-phone panel geometry: larger bounded reading area, HUD-origin sizing, tiny available space, and unchanged tall/desktop bounds.');

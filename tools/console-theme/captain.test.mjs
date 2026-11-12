@@ -9,8 +9,8 @@ import {CAPTAIN_LOGIN_REVEAL,CAPTAIN_AUTH_CLOSE} from './captain.mjs';
 const standard=workspaceConsoleHtml(CONSOLE_HTML),captain=workspaceConsoleHtml(CONSOLE_HTML,{theme:'captain'});
 test('generated theme is current and both documents fit the bounded security handler',()=>{
  execFileSync(process.execPath,['tools/console-theme/build.mjs','--check']);
- // Review UI growth at 212 KiB, leaving 44 KiB before the runtime ceiling.
- for(const html of [standard,captain]){assert(Buffer.byteLength(html)<224*1024);assert.doesNotThrow(()=>createConsoleHandler({html}));}
+ // Reviewed upstream cockpit/tool-access growth: retain at least 1 KiB below the unchanged 256 KiB ceiling.
+ for(const html of [standard,captain]){assert(Buffer.byteLength(html)<255*1024);assert.doesNotThrow(()=>createConsoleHandler({html}));}
  assert.doesNotThrow(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES)}));
  assert.throws(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES+1)}),/console_document_invalid/);
  assert.throws(()=>createConsoleHandler({html:'é'.repeat(MAX_CONSOLE_DOCUMENT_BYTES/2+1)}),/console_document_invalid/);
@@ -49,6 +49,16 @@ test('space scene and doors are inside the central window, with privacy footer o
  assert(window>captain.indexOf('<header class="captain-topbar">'));
  assert(scene>window&&doors>scene&&footer>doors);
  assert.equal(captain.slice(footer-6,footer),'</div>');
+});
+
+test('Captain retains the laptop rail and relocates upstream cockpit controls without duplicating them',()=>{
+ assert(captain.includes('@media(min-width:901px)'));
+ assert(captain.includes('@media(max-width:900px)'));
+ assert(!captain.includes('@media(min-width:1101px)'));
+ const header=captain.slice(captain.indexOf('<header class="captain-topbar">'),captain.indexOf('</header>'));
+ assert(header.includes('id="cockpit-toggle"'));
+ assert(header.includes('class="folding-glass"'));
+ assert(captain.includes('.console.captain[data-cockpit=true] .folding-shell{position:absolute;'));
 });
 
 test('appearance cookie selects only prevalidated documents with their own CSP and shared authentication',async()=>{

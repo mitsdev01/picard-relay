@@ -4,18 +4,23 @@ The authenticated console has five views when finite admission is enabled. A hos
 
 The [cockpit tour](COCKPIT-TOUR.md) includes a 15-second recording and a quick
 control guide. Navigation is centered horizontally. Open the **…** menu beside
-Refresh for **Documentation ↗**, **Stealth mode**, motion controls and Sign out.
+Refresh for **Documentation ↗**, Feedback, Replay walkthrough and Sign out.
 Documentation opens the guide index in a new tab and is available on the sign-in
 screen.
 
-Choose **Stealth mode** or press **Alt+Shift+S** for a plain Work Console with a
-neutral title, sidebar on desktop, and motion turned off. Use the same control
-to return to Picard. The cockpit HUD shows the shortcut.
+Choose **Stealth** on the instrument rail or press **Alt+Shift+S** for a plain Work
+Console with a neutral title, sidebar on desktop, and motion turned off. The
+shortcut is printed on the switch. Choose **Resume display** to return to your last layout.
 
-Under **… → Auto stealth**, choose when the tab is hidden, after five minutes
+Use **Auto** beside Stealth to enter Stealth when the tab is hidden, after five minutes
 without a click, keystroke or scroll, or both. Auto stealth starts off. Your
 browser remembers the setting. Automatic entry stays on until you toggle it or
 reload. The same job and request data remain visible.
+
+On short phones, Cockpit uses a compact HUD and gives reading panels more of
+the available windshield. Long answers scroll inside the panel while the
+instruments and next action remain available. Workspace still offers a full-page
+layout. Rotating or resizing keeps the current request and answer open.
 
 | View | What to use it for |
 | --- | --- |
@@ -37,12 +42,29 @@ Overview. Open a row for the counts and comparison details.
 Run the same task twice with the same model and reasoning setting. Assign both
 runs the same comparison ID, and mark one as the baseline and the other as
 assisted. A baseline must have no recorded Picard tool call and an assisted
-run must have a successful one. The headline compares total input and output
-tokens. The assisted row also compares fresh input and output, excluding
-cached input. The comparison can show lower, higher, or equal usage. Check
-both answers before drawing a conclusion about efficiency. A regular turn
-shows its observed usage and leaves savings unmeasured. Reported token counts
-are separate from the plan's remaining allowance.
+run must have a successful one, including a validated preloaded result.
+
+The headline shows **estimated Codex credits saved** across the latest 20 complete,
+comparable tasks in the retained history. It uses combined credit totals:
+`(Codex-alone total - with-Picard total) / Codex-alone total × 100`.
+Larger jobs therefore carry more weight than smaller ones. Preparation, finishing
+and linked fixes count; shared preparation is allocated once to each alternative.
+Cases where Picard uses more credits remain included. The sample count and both
+combined totals appear beside the headline, with individual comparisons below.
+
+Comparisons need complete recorded workflow coverage on both sides, the same
+finishing model and reasoning setting, and usable Codex credit estimates. Legacy
+finishing-only comparisons, incomplete records and unknown estimates stay in
+history but are excluded from the rolling headline, with counts explaining why.
+An empty eligible set says “not yet measured”, not zero savings. The window is
+ordered by each pair's latest recorded activity; a later correction updates its
+original comparison and can bring it back into the latest 20. The 12 recent run
+rows do not limit the calculation, which uses up to 1,000 retained native records.
+
+These credits are estimates, not a direct reading of subscription allowance or
+billed cost. Picard provider tokens stay separately measured, with no invented
+Codex-credit conversion. Check both answers for equal usefulness before drawing
+a conclusion about efficiency; recorded coverage does not certify answer quality.
 
 ### Connect native Codex completion
 
@@ -203,12 +225,16 @@ no new libraries, external assets or timers. The walkthrough records v1.0.33;
 the latest recorded enrolled-host checks cover v1.0.34. Other installations and
 owner acceptance remain separate.
 
-Select **Cockpit** beside Refresh to switch layouts. Five quick activations of
-the insignia also switch layouts. **… (Settings) → Cockpit stars** controls
-whether the 128 round stars appear behind the HUD. Navigation opens an opaque lower
-reading deck while readiness and projected activity remain visible above it.
-Click exposed space, choose Minimize panel or press Escape to retract the deck
-without clearing the draft or selected result. Clicks inside the deck preserve
+Select **Cockpit view** above the Workspace or **Workspace** on the curved instrument rail to switch layouts. Five
+quick activations of the insignia also switch layouts. **Stars** on that rail controls
+whether the 128 round stars appear behind the HUD. Navigation opens a translucent, content-sized panel from its control while readiness
+and activity remain visible. Long content scrolls inside the available windshield;
+CPU and Auto follow the same handoff.
+Click exposed space, choose Close panel or press Escape to retract the deck
+without clearing the draft or selected result. Switching controls retracts the old
+panel first; repeated clicks and Escape cancel pending openings. A latest-work
+readout can be dismissed with × and restored from the account menu. Selecting a
+saved result opens its answer across the windshield, without submitting new work. Clicks inside the deck preserve
 it. Pause motion and hidden tabs pause animation; reduced motion leaves a static
 scene. The browser remembers both choices across reloads. Stealth Mode hides
 the cockpit while active and restores your display choices on exit. See [Owner features](OWNER-FEATURES.md) for
