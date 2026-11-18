@@ -11,7 +11,9 @@ permissions:
   contents: read
 jobs:
   native-oracle:
-    if: github.event.repository.private == false
+    # These installers pin Brian's signing identity and compare its published bytes.
+    # Fork installations use the separately qualified fork release process.
+    if: github.repository == 'bmartynowicz/picard-relay' && github.event.repository.private == false
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:

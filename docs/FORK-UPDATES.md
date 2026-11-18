@@ -12,6 +12,14 @@ The required `check` job tests the connector, core and companion; the manual
 fork signing workflow repeats companion and recovery tests before publication.
 These are source checks, not permission to install a release.
 
+The fork check also runs the complete root offline suite, including installer
+trust, lifecycle and browser-setup boundary fixtures. The fresh Linux, browser
+launch and native Oracle installation workflows are upstream-only: their
+installer pins Brian's signing identity and requires the published runtime to
+match the checkout. They cannot qualify a customized fork runtime. Their trust
+checks remain unchanged. Do not use those fresh-install scripts to install this
+fork; qualify the exact fork envelope and use the guarded update below.
+
 The `companion-compatibility.yml` source workflow intentionally does not use
 `releases/stable.json`: an upstream merge can bring an upstream envelope whose
 runtime differs from this fork. Exact artifact qualification remains the job of

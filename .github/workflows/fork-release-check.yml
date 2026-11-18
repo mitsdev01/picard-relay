@@ -15,6 +15,8 @@ jobs:
         with:
           node-version: '24.22.1'
       - run: node --test scripts/release-context.test.mjs scripts/prepare-fork-trust.test.mjs scripts/publish-fork.test.mjs
+      - name: Complete offline source and installer boundary tests
+        run: npm test
       - run: npm --prefix experimental/compute-broker test
       - run: npm --prefix experimental/compute-broker run test:jitless
       - run: npm run test:coding-connector

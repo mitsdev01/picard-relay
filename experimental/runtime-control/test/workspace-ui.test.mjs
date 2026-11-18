@@ -116,6 +116,8 @@ for(const [completedWork,rank] of [[0,'Lieutenant'],[4,'Lieutenant'],[5,'Command
  const floor=completedWork>=25?25:completedWork>=5?5:0,ceiling=completedWork>=25?100:completedWork>=5?25:5;
  assert.equal(h.get('training-progress').value,completedWork===100?1:completedWork-floor);
  assert.equal(h.get('training-progress').max,completedWork===100?1:ceiling-floor);
+ assert.match(h.get('training-progress').attrs['aria-label'],/completed results/);
+ assert.doesNotMatch(h.get('training-progress').attrs['aria-label'],/accepted results/);
 });
 for(const [n,next,remaining] of [[1,'Commander',4],[4,'Commander',1],[5,'Captain',20],[25,'Admiral',75],[100,null,null],[null,null,null]])test('Captain rank copy separates next rank and remaining results: '+n,async t=>{
  const h=await harness(t,{theme:'captain',configTransform:c=>({...c,training:{v:1,hasSavedResult:true,hasReviewedResult:true},progress:n===null?null:{v:2,completedWork:n,atLeast:n===100}})});
