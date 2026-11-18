@@ -1,7 +1,8 @@
 // Compose the owner workspace only when server-side admission is enabled.
 // No external library, resource, credential, HTML interpolation of private data.
-export function admissionConsoleHtml(base,{activationEnabled=false,workspaceEnabled=false,theme='standard'}={}){
+export function admissionConsoleHtml(base,{activationEnabled=false,workspaceEnabled=false,publicTestEnabled=false,theme='standard'}={}){
  if(activationEnabled!==true)return base;
+ if(publicTestEnabled===true){if(base.split('<h2>Updater</h2>').length!==2)throw Error('admission_document_invalid');base=base.replace('<h2>Updater</h2>','<h2>Public trial</h2><p><a href="/public-test/manage">Manage test allowance →</a></p><h2>Updater</h2>');}
  if(workspaceEnabled===true)return workspaceConsoleHtml(base,{theme});
  const replace=(old,value)=>{if(base.split(old).length!==2)throw Error('admission_document_invalid');base=base.replace(old,value);};
  replace('<button id="nav-groq"','<button id="nav-requests" type="button" aria-controls="view-requests"><span class="nav-index" aria-hidden="true">03</span>Requests</button><button id="nav-groq"');
@@ -80,7 +81,7 @@ const TRAINING_MARKUP=String.raw`<section class="training" aria-labelledby="trai
 <dt>Cadet</dt><dd>Sign in to check setup and history.</dd>
 <dt>Ensign</dt><dd>Finish setup to send a request and review its answer.</dd>
 <dt>Lieutenant</dt><dd>Review a saved answer to unlock more templates, context, task links and code exports.</dd>
-${WORK_RANKS.map(([rank,count])=>'<dt>'+rank+'</dt><dd>'+count+' accepted results.</dd>').join('')}
+${WORK_RANKS.map(([rank,count])=>'<dt>'+rank+'</dt><dd>'+count+' completed results.</dd>').join('')}
 </dl></details></section>`;
 
 const WORKSPACE_STYLE=String.raw`
@@ -116,12 +117,13 @@ const WORKSPACE_MARKUP=String.raw`<section id="view-requests" aria-labelledby="h
 </article>
 </section>`;
 
+// Trim generated-code indentation to retain the fixed console/preview byte cap.
 const WORKSPACE_SCRIPT=()=>String.raw`
 const workspaceCorrection=${JSON.stringify(REVIEWED_REGRESSION_RESULT)};
 const workRanks=${JSON.stringify(WORK_RANKS)};
 let walkthroughReviewed;
 let workConfigAttempted=false,workConfigFlight=null,workGraduated=false,workProgress=null;
-let workConfig=null,workDraft=null,workResult=null,workRef=null,workBusy=false,workGeneration=0,workTimer=null,workRead=null,workFresh=false,workDraftId=null,workSubmissionUnknown=false;
+let workConfig=null,workDraft=null,workResult=null,workRef=null,workBusy=false,workGeneration=0,workTimer=null,workRead=null,workFresh=false,workDraftId=null,workHandoff='';
 const workControllers=new Set(),workDownloads=new Set();
 const workFields=['request-title','request-text','request-context','request-task'];
 const appearance=$('console-appearance');
@@ -149,18 +151,19 @@ $('appearance-cancel').addEventListener('click',()=>{pendingAppearance=null;$('a
 
 function stopWorkspacePoll(){clearTimeout(workTimer);workTimer=null;}
 function workNotice(text,warn=false){$('request-notice').textContent=text;$('request-notice').dataset.tone=warn?'warn':'';}
+function renderWorkHandoff(){$('request-state').textContent=workHandoff==='saved'?'Approval saved':'Handoff unconfirmed';$('request-next').textContent='Check saved status for this exact request.';}
 // Ranks teach the interface; they never grant provider or execution authority.
 function rememberProgress(c){
  const age=Date.now()-Date.parse(c?.observedAt),t=c?.training,s=c?.setup;
  if(!c||!Number.isFinite(age)||age< -5000||age>=60000||t?.v!==1||typeof t.hasSavedResult!=='boolean'||typeof t.hasReviewedResult!=='boolean'||t.hasReviewedResult&&!t.hasSavedResult||!s||['ownerAuthentication','durableStorage','providerEnrollment'].some(k=>typeof s[k]!=='boolean'))return;
- const p=c.progress,acceptedWork=p?.v===1&&Number.isSafeInteger(p.acceptedWork)&&p.acceptedWork>=0&&p.acceptedWork<=100&&typeof p.atLeast==='boolean'&&p.atLeast===(p.acceptedWork===100)?p.acceptedWork:null;
- workProgress={reviewed:workProgress?.reviewed===true||t.hasReviewedResult,saved:workProgress?.saved===true||t.hasSavedResult,setup:workProgress?.setup===true||s.ownerAuthentication&&s.durableStorage&&s.providerEnrollment||t.hasSavedResult,acceptedWork};
+ const p=c.progress,completedWork=p?.v===2&&Number.isSafeInteger(p.completedWork)&&p.completedWork>=0&&p.completedWork<=100&&typeof p.atLeast==='boolean'&&p.atLeast===(p.completedWork===100)?p.completedWork:null;
+ workProgress={reviewed:workProgress?.reviewed===true||t.hasReviewedResult,saved:workProgress?.saved===true||t.hasSavedResult,setup:workProgress?.setup===true||s.ownerAuthentication&&s.durableStorage&&s.providerEnrollment||t.hasSavedResult,completedWork};
 }
 function trainingState(){
  if(!workProgress)return null;
  const current=workFresh&&workResult?.resultAvailable===true,reviewed=workProgress.reviewed||workGraduated||current&&workResult.review.revision>0,saved=workProgress.saved||reviewed||current,setup=workProgress.setup||saved;
- const n=workProgress.acceptedWork,rank=reviewed?(workRanks.findLast(([,count])=>n>=count)?.[0]??'Lieutenant'):setup?'Ensign':'Cadet';
- return {rank,acceptedWork:n,setup,saved,reviewed,step:reviewed?3:saved?2:setup?1:0};
+ const n=workProgress.completedWork,rank=reviewed?(workRanks.findLast(([,count])=>n>=count)?.[0]??'Lieutenant'):setup?'Ensign':'Cadet';
+ return {rank,completedWork:n,setup,saved,reviewed,step:reviewed?3:saved?2:setup?1:0};
 }
 function workAdvanced(){return trainingState()?.reviewed===true;}
 function clearTraining(){
@@ -185,14 +188,14 @@ function renderTraining(){
   walkthroughReviewed=t.reviewed;
  }
  const copy=t.reviewed?['Lieutenant earned','Advanced tools unlocked: code templates, context, task links and code/handoff exports.','Use advanced tools']:t.saved?['Ensign','Review a saved answer to earn Lieutenant and unlock advanced tools.','Review your first result']:t.setup?['Welcome aboard, Ensign','Setup complete. Complete and review your first request to unlock advanced tools.','Start your first request']:['Cadet','Finish setup to earn Ensign and unlock your first request.','Check setup'];
- if(t.reviewed){const n=t.acceptedWork,next=workRanks.find(([,count])=>n<count);copy[0]=t.rank+(t.rank==='Lieutenant'?' earned':'');copy[1]=n===null?'Work milestones unavailable.':next?n+' accepted '+(n===1?'result':'results')+' · '+(next[1]-n)+' to '+next[0]+'.':'100+ accepted results. Admiral earned.';}
+ if(t.reviewed){const n=t.completedWork,next=workRanks.find(([,count])=>n<count);copy[0]=t.rank+(t.rank==='Lieutenant'?' earned':'');copy[1]=n===null?'Work milestones unavailable.':next?n+' completed '+(n===1?'result':'results')+' · '+(next[1]-n)+' to '+next[0]+'.':'100+ completed results. Admiral earned.';}
  $('training-remaining').hidden=true;$('training-remaining').textContent='';
  if($('console-surface').dataset.consoleTheme==='captain'&&t.reviewed){
-  copy[0]=t.rank;const n=t.acceptedWork;
-  if(n!==null&&n<100){const next=n<5?['Commander',5]:n<25?['Captain',25]:['Admiral',100];copy[1]='Next rank: '+next[0];$('training-remaining').textContent=(next[1]-n)+' more accepted '+(next[1]-n===1?'result':'results')+' to advance';$('training-remaining').hidden=false;}
+  copy[0]=t.rank;const n=t.completedWork;
+  if(n!==null&&n<100){const next=n<5?['Commander',5]:n<25?['Captain',25]:['Admiral',100];copy[1]='Next rank: '+next[0];$('training-remaining').textContent=(next[1]-n)+' more completed '+(next[1]-n===1?'result':'results')+' to advance';$('training-remaining').hidden=false;}
  }
  $('training-rank').textContent=t.rank;$('training-rank').hidden=false;$('logo-wrap').dataset.rank=t.rank.toLowerCase();$('training-title').textContent=copy[0];$('training-next').textContent=copy[1];$('training-action').textContent=nextActionState()?.label??copy[2];$('training-action').disabled=workBusy;
- const n=t.acceptedWork,floor=n>=100?100:n>=25?25:n>=5?5:0,ceiling=n>=100?100:n>=25?100:n>=5?25:5;
+ const n=t.completedWork,floor=n>=100?100:n>=25?25:n>=5?5:0,ceiling=n>=100?100:n>=25?100:n>=5?25:5;
  $('training-progress').hidden=t.reviewed&&n===null;$('training-progress').max=t.reviewed?(n>=100?1:ceiling-floor):3;$('training-progress').value=t.reviewed?(n>=100?1:n===null?0:n-floor):t.step;$('training-progress').setAttribute('aria-label',t.reviewed?(n===null?'Work milestones unavailable':n>=100?'Admiral · 100 or more accepted results':t.rank+' · '+n+' accepted results · '+(ceiling-n)+' to next rank'):t.rank+' · '+t.step+' of 3 training steps complete');
  for(const [id,label,earned]of [['training-setup','Setup',t.setup],['training-result','First result',t.saved],['training-review','Review',t.reviewed]]){$(id).dataset.earned=String(earned);$(id).setAttribute('aria-label',label+' · '+(earned?'complete':'next'));}
  $('commissioning').dataset.earned=String(t.setup);$('commission-title').textContent=t.rank;$('commission-note').textContent=t.reviewed?'Advanced tools unlocked.':t.setup?'First rank earned. Welcome aboard.':'Finish setup to earn Ensign.';$('request-advanced').hidden=!t.reviewed;$('advanced-locked').hidden=t.reviewed;updateNextActions();
@@ -216,7 +219,7 @@ function trainingAction(){
 function clearWorkspace(){
  walkthroughReviewed=undefined;$('first-run-walkthrough').open=false;$('first-run-walkthrough').hidden=true;$('walkthrough-replay').hidden=true;
  clearTraining();workConfigAttempted=false;workConfigFlight=null;workGraduated=false;workProgress=null;
- workGeneration++;stopWorkspacePoll();for(const c of workControllers)c.abort();workControllers.clear();workRead=null;for(const url of workDownloads)URL.revokeObjectURL(url);workDownloads.clear();workConfig=null;workDraft=null;workResult=null;workRef=null;workDraftId=null;workBusy=false;workFresh=false;workSubmissionUnknown=false;
+ workGeneration++;stopWorkspacePoll();for(const c of workControllers)c.abort();workControllers.clear();workRead=null;for(const url of workDownloads)URL.revokeObjectURL(url);workDownloads.clear();workConfig=null;workDraft=null;workResult=null;workRef=null;workDraftId=null;workBusy=false;workFresh=false;workHandoff='';
  for(const id of [...workFields,'request-review-note','request-grade-score','request-grade-note'])$(id).value='';
  for(const id of ['request-exact-text','request-exact-context','request-original','request-sheet-title','request-next','request-state','request-observed','request-review-summary'])$(id).textContent='';
  for(const id of ['request-output','request-provenance','request-review-history','request-grade-history','request-limits','request-setup-list'])$(id).replaceChildren();
@@ -237,7 +240,7 @@ function renderRoute(){
  if(!authenticated){root.dataset.routePhase='unknown';caption.hidden=root.dataset.consoleTheme!=='captain';caption.textContent='Sign in to check activity';return;}
  const age=Date.now()-Date.parse(workResult?.observedAt),fresh=workFresh&&age>=-5000&&age<60000;
  if(!authenticated){phase='unknown';label='Sign in to check activity';}
- else if(workSubmissionUnknown){phase='unknown';label='Submission unconfirmed · check saved status';}
+ else if(workHandoff){phase='unknown';label='Submission unconfirmed · check saved status';}
  else if(workResult){phase=fresh?workResult.state:'unknown';label='Selected request · '+(fresh?workResult.state:'status unavailable');}
  else if(workDraft){phase=workFresh?'review':'unknown';label=workFresh?'Draft ready for your review · no provider call':'Draft status unavailable';}
  else{const age=Date.now()-Date.parse(latest?.observedAt),j=latest?.jobs;if(statusFailed||!j||age< -5000||age>=60000||!Number.isFinite(age)){phase='unknown';label='Relay activity unavailable';}else if(j.invoking>0){phase='invoking';label='Relay activity · '+j.invoking+' provider call(s) active';}else if(j.claimed>0||j.queued>0){phase=j.claimed>0?'claimed':'queued';label='Relay activity · work '+phase;}}
@@ -248,7 +251,7 @@ function workButtons(){
  const configCurrent=workConfig&&Date.now()-Date.parse(workConfig.observedAt)<60000&&Date.now()-Date.parse(workConfig.observedAt)>=-5000;
  if(workConfig&&!configCurrent)$('request-provider').textContent='Availability needs a fresh check. Select Refresh.';
  for(const id of ['request-prepare','request-edit','request-new','request-refresh','request-check','request-accept','request-changes'])$(id).disabled=workBusy;
- $('request-approve').disabled=workBusy||!workFresh||!configCurrent||workConfig?.ready!==true||!workDraft||workSubmissionUnknown||workDraft.approval.expiresAt<=Date.now();
+ $('request-approve').disabled=workBusy||!workFresh||!configCurrent||workConfig?.ready!==true||!workDraft||workHandoff||workDraft.approval.expiresAt<=Date.now();
  for(const id of ['request-accept','request-changes'])$(id).disabled=workBusy||!workFresh||!workResult?.resultAvailable;
  $('request-grade-save').disabled=workBusy||!workFresh||!workResult?.resultAvailable||!workResult?.grade||!['1','2','3','4','5'].includes($('request-grade-score').value);
  for(const id of ['request-copy','request-download','request-handoff'])$(id).disabled=!workResult?.resultAvailable;
@@ -273,7 +276,7 @@ async function fetchWorkConfig(){
 }
 function workNavigate(ref,replace=false){workRef=ref;preferredRoute={view:'requests',ref};writeRoute(replace);}
 function newWorkspaceRequest(){
- if(workBusy)return;stopWorkspacePoll();workRead?.abort();workRead=null;workDraft=null;workResult=null;workRef=null;workDraftId=null;workFresh=false;workSubmissionUnknown=false;
+ if(workBusy)return;stopWorkspacePoll();workRead?.abort();workRead=null;workDraft=null;workResult=null;workRef=null;workDraftId=null;workFresh=false;workHandoff='';
  for(const id of [...workFields,'request-review-note','request-grade-score','request-grade-note'])$(id).value='';$('request-grade-details').open=false;$('request-template').value='custom';$('request-purpose').value='sanitized-source-proposal';$('request-context-details').open=false;
  $('request-sheet').hidden=true;$('request-compose').hidden=false;$('request-result').hidden=true;$('request-output').replaceChildren();$('request-original').textContent='';workNavigate(null);workNotice('');workCounts();workButtons();$('request-title').focus?.();
 }
@@ -286,7 +289,7 @@ function renderWorkspaceDraft(d){
  $('request-exact-text').textContent=d.payload.request.text;$('request-exact-context').textContent=d.payload.context.latestFinding;$('request-exact-context-wrap').hidden=!d.payload.context.latestFinding;$('request-result').hidden=true;$('request-approve').hidden=expired;$('request-edit').hidden=false;
  $('request-observed').textContent='Approval expires '+formatTime(d.approval.expiresAt);const root=$('request-limits');root.replaceChildren();for(const [k,v]of [['Provider','Groq · openai/gpt-oss-20b'],['Calls','1'],['Output ceiling','4,096 tokens'],['Execution','Text proposal only']])workPair(root,k,v);
  $('request-cost').textContent='Retained Free-plan enrollment. Live billing and remaining quota are unknown. No tools, automatic retries, model substitution or paid fallback.';
- const meta=$('request-provenance');meta.replaceChildren();for(const [k,v]of [['Request',d.payload.eventId],['Task reference',d.payload.taskId],['Input SHA-256',d.approval.inputSha256],['Draft SHA-256',d.draftSha256],['Created',formatTime(d.approval.issuedAt)]])workPair(meta,k,v);workButtons();
+ const meta=$('request-provenance');meta.replaceChildren();for(const [k,v]of [['Request',d.payload.eventId],['Task reference',d.payload.taskId],['Input SHA-256',d.approval.inputSha256],['Draft SHA-256',d.draftSha256],['Created',formatTime(d.approval.issuedAt)]])workPair(meta,k,v);workButtons();if(workHandoff)renderWorkHandoff();
 }
 function projectWorkspace(value,ref){
  if(value?.v!==1||value.ref!==ref||!['queued','claimed','invoking','completed','failed','blocked','cancelled','uncertain'].includes(value.state)||typeof value.resultAvailable!=='boolean'||typeof value.request?.title!=='string'||typeof value.request?.text!=='string'||typeof value.request?.context!=='string'||!Number.isFinite(Date.parse(value.observedAt))||typeof value.provenance?.model!=='string'||!Number.isSafeInteger(value.review?.revision)||!Array.isArray(value.review.history)||value.review.history.length>100)throw Error('result');
@@ -294,13 +297,13 @@ function projectWorkspace(value,ref){
  const grade=value.grade;if(grade!==undefined&&grade!==null&&(!Number.isSafeInteger(grade?.revision)||grade.revision<0||grade.revision>100||!Array.isArray(grade.history)||grade.history.length!==grade.revision||grade.history.some((g,i)=>g.ref!==ref||g.revision!==i+1||!Number.isInteger(g.score)||g.score<1||g.score>5||typeof g.note!=='string'||g.note.length>500||!['owner','client'].includes(g.reviewer?.kind)||g.reviewer.kind==='client'&&typeof g.reviewer.keyId!=='string'||g.resultSha256!==value.result?.sha256||!Number.isSafeInteger(g.recordedAt))||JSON.stringify(grade.latest)!==JSON.stringify(grade.history.at(-1)??null)))throw Error('grade');
  return {...value,grade:grade??null};
 }
-const workNextActions={queued:'Queued. You can leave this page and return to the same request.',claimed:'The relay has claimed this request. Following its recorded progress.',invoking:'The provider call is in progress. Checking status will not send another call.',completed:'Ready for your review.',uncertain:'The provider outcome is uncertain. This request is spent and will not be retried. Preserve this record for operator review.',failed:'This request failed and is spent. Inspect the recorded reason before deciding on any new work.',blocked:'This request is blocked. Check the recorded reason and provider availability.',cancelled:'This request was cancelled. No replacement request has been created.'};
+const workNextActions={queued:['Approval saved · queued','Provider not started. Follow this saved request.'],claimed:['Preparing','Claimed by the relay; provider handoff is not confirmed.'],invoking:['Running','Handoff recorded; remote acceptance is not confirmed. Check saved status, never resend.'],completed:['Completed','Ready for your review.'],uncertain:['Outcome unknown','This request is spent. Check saved status or ask your operator; do not resend.'],failed:['Failed','This request failed and is spent. Review the reason; no automatic retry.'],blocked:['Blocked','New execution is blocked. Check the reason; saved answers remain readable.'],cancelled:['Cancelled','No replacement request was created.']};
 function renderWorkspaceResult(v){
  $('request-cost').hidden=true;
  if(workProgress&&workFresh&&v.resultAvailable){workProgress.saved=true;workProgress.setup=true;workProgress.reviewed=workProgress.reviewed||v.review.revision>0;if(!workProgress.reviewed)workProgress.reviewRef=v.ref;}
  renderTraining();
- workShowSheet();workSteps(v.state==='completed'?'result':'run');$('request-state').textContent=v.state==='completed'?'Completed · '+(v.review.latest?.decision==='accepted'?'accepted':v.review.latest?.decision==='changes_requested'?'changes requested':'awaiting your review'):v.state==='uncertain'?'Needs operator review':v.state;
- $('request-sheet-title').textContent=v.request.title;$('request-next').textContent=workNextActions[v.state]+(v.state==='failed'||v.state==='blocked'?' '+(reasons[v.reasonCode]||'Recorded reason unavailable.'):'');$('request-observed').textContent='Observed '+formatTime(Date.parse(v.observedAt));$('request-exact-text').textContent=v.request.text;$('request-exact-context').textContent=v.request.context;$('request-exact-context-wrap').hidden=!v.request.context;$('request-approve').hidden=true;$('request-edit').hidden=true;
+ workShowSheet();workSteps(v.state==='completed'?'result':'run');$('request-state').textContent=v.state==='completed'?'Completed · '+(v.review.latest?.decision==='accepted'?'accepted':v.review.latest?.decision==='changes_requested'?'changes requested':'awaiting your review'):workNextActions[v.state][0];
+ $('request-sheet-title').textContent=v.request.title;$('request-next').textContent=workNextActions[v.state][1]+(v.state==='failed'||v.state==='blocked'?' '+(reasons[v.reasonCode]||'Recorded reason unavailable.'):'');$('request-observed').textContent='Observed '+formatTime(Date.parse(v.observedAt));$('request-exact-text').textContent=v.request.text;$('request-exact-context').textContent=v.request.context;$('request-exact-context-wrap').hidden=!v.request.context;$('request-approve').hidden=true;$('request-edit').hidden=true;
  $('request-limits').replaceChildren();for(const [k,val]of [['Provider',v.provenance.model],['Calls','1'],['Output ceiling',v.provenance.maxOutputTokens+' tokens'],['Source',v.provenance.source]])workPair($('request-limits'),k,val);
  const providerUsage=v.provenance?.providerUsage;
  const usageText=providerUsage&&[providerUsage.inputTokens,providerUsage.outputTokens,providerUsage.totalTokens].every(n=>Number.isSafeInteger(n)&&n>=0)&&providerUsage.inputTokens+providerUsage.outputTokens===providerUsage.totalTokens
@@ -331,24 +334,24 @@ async function prepareWorkspace(event){
  event.preventDefault();if(workBusy)return;const training=trainingState();if(!training?.setup){workNotice('Complete setup before preparing your first request.',true);return;}if(!workAdvanced()&&($('request-context').value||$('request-task').value||$('request-purpose').value==='public-source-review')){workNotice('Review a saved answer to unlock context and task links.',true);return;}if(!$('request-title').value.trim()||!$('request-text').value.trim()){workNotice('Enter a title and a request.',true);return;}
  workBusy=true;workButtons();const generation=workGeneration;workDraftId=workDraftId??crypto.randomUUID();
  const body={requestId:workDraftId,taskId:$('request-task').value,title:$('request-title').value,requestText:$('request-text').value,context:$('request-context').value,purpose:$('request-purpose').value};
- try{const value=await workRequest('/workspace/drafts',body);if(generation!==workGeneration)return;workDraft=value.draft;workResult=null;workFresh=true;workSubmissionUnknown=false;workNavigate(workDraft.payload.eventId);renderWorkspaceDraft(workDraft);workNotice('Draft saved. No provider call has been made.');$('request-sheet-title').focus?.();await workLoadConfig();}
+ try{const value=await workRequest('/workspace/drafts',body);if(generation!==workGeneration)return;workDraft=value.draft;workResult=null;workFresh=true;workHandoff='';workNavigate(workDraft.payload.eventId);renderWorkspaceDraft(workDraft);workNotice('Draft saved. No provider call has been made.');$('request-sheet-title').focus?.();await workLoadConfig();}
  catch(e){if(generation===workGeneration&&authenticated)workNotice(e.code==='request_too_large'?'The combined input is too large. Shorten the request or context.':e.code==='draft_conflict'?'This draft ID already belongs to different input. Edit the brief and prepare a new draft.':'Draft saving was not confirmed. Review request again to recover the same draft; no provider call was made.',true);}
  finally{if(generation===workGeneration){workBusy=false;workButtons();workSchedule();}}
 }
 async function readWorkspaceRequest(){
  if(!authenticated||!workRef||workRead)return;const ref=workRef,generation=workGeneration,controller=new AbortController();workRead=controller;
  if(workResult?.ref!==ref){$('request-grade-score').value='';$('request-grade-note').value='';$('request-grade-details').open=false;}
- try{const v=await workRequest('/workspace/requests/'+ref,undefined,controller);if(generation!==workGeneration||ref!==workRef)return;const age=Date.now()-Date.parse(v.observedAt);workFresh=Number.isFinite(age)&&age>=-5000&&age<60000;workSubmissionUnknown=false;
-  if(v.draft){if(v.draft.payload?.eventId!==ref)throw Error('draft');workDraft=v.draft;workResult=null;renderWorkspaceDraft(workDraft);}else{const next=projectWorkspace(v,ref);if(workResult?.ref===ref&&workResult.result?.sha256===next.result?.sha256){if(workResult.review.revision>next.review.revision)next.review=workResult.review;if(workResult.grade&&next.grade&&workResult.grade.revision>next.grade.revision)next.grade=workResult.grade;}workResult=next;workDraft=null;renderWorkspaceResult(workResult);}workNotice(workFresh?'Saved status checked. No request was resubmitted.':'The observation time is stale or ahead of this browser. Refresh and check the host clock before approving or reviewing.',!workFresh);
+ try{const v=await workRequest('/workspace/requests/'+ref,undefined,controller);if(generation!==workGeneration||ref!==workRef)return;const age=Date.now()-Date.parse(v.observedAt);workFresh=Number.isFinite(age)&&age>=-5000&&age<60000;
+  if(v.draft){if(v.draft.payload?.eventId!==ref||workHandoff==='saved')throw Error('draft');workHandoff='';workDraft=v.draft;workResult=null;renderWorkspaceDraft(workDraft);}else{const next=projectWorkspace(v,ref);workHandoff='';if(workResult?.ref===ref&&workResult.result?.sha256===next.result?.sha256){if(workResult.review.revision>next.review.revision)next.review=workResult.review;if(workResult.grade&&next.grade&&workResult.grade.revision>next.grade.revision)next.grade=workResult.grade;}workResult=next;workDraft=null;renderWorkspaceResult(workResult);}workNotice(workFresh?'Saved status checked. No request was resubmitted.':'The observation time is stale or ahead of this browser. Refresh and check the host clock before approving or reviewing.',!workFresh);
  }catch(e){if(generation===workGeneration&&ref===workRef&&authenticated){workFresh=false;workNotice(e.status===404?'No request is available at this link for this owner.':'Current request status is unknown. The last observation is preserved. Checking status never resubmits work.',true);}}
  finally{if(workRead===controller)workRead=null;workButtons();workSchedule();}
 }
 async function approveWorkspace(){
  if($('request-approve').disabled||!workDraft)return;const draft=workDraft,generation=workGeneration;workBusy=true;workButtons();
  try{await workLoadConfig();if(!workConfig?.ready)throw Error('unavailable');const proof=await workRequest('/workspace/approvals',{requestId:draft.payload.requestId});
-  if(!proof.existing){if(proof.ref!==draft.payload.eventId||proof.draftSha256!==draft.draftSha256||!/^[A-Za-z0-9_-]{43}$/.test(proof.nonce??''))throw Error('approval');await workRequest('/workspace/requests',{requestId:draft.payload.requestId,nonce:proof.nonce,draftSha256:draft.draftSha256,approve:true});}
-  if(generation===workGeneration){await readWorkspaceRequest();workNotice('Registered once. Following the saved request.');}
- }catch{if(generation===workGeneration&&authenticated){workSubmissionUnknown=true;workFresh=false;workNotice('Submission was not confirmed. Check saved status to recover this exact request. No retry or replacement was sent.',true);}}
+  if(proof.ref!==draft.payload.eventId)throw Error('approval');if(!proof.existing){if(proof.draftSha256!==draft.draftSha256||!/^[A-Za-z0-9_-]{43}$/.test(proof.nonce??''))throw Error('approval');await workRequest('/workspace/requests',{requestId:draft.payload.requestId,nonce:proof.nonce,draftSha256:draft.draftSha256,approve:true});}
+  if(generation===workGeneration){workHandoff='saved';renderWorkHandoff();await readWorkspaceRequest();if(workFresh)workNotice('Registered once. Following the saved request.');}
+ }catch{if(generation===workGeneration&&authenticated){workHandoff='unknown';workFresh=false;renderWorkHandoff();workNotice('Submission was not confirmed. Check saved status to recover this exact request. No retry or replacement was sent.',true);}}
  finally{if(generation===workGeneration){workBusy=false;workButtons();workSchedule();}}
 }
 function editWorkspace(){
@@ -370,8 +373,8 @@ async function saveWorkspaceReview(decision){
  if(workBusy||!workFresh||!workResult?.resultAvailable)return;const result=workResult,generation=workGeneration,note=$('request-review-note').value;workBusy=true;workButtons();
  try{const v=await workRequest('/workspace/reviews/'+result.ref,{expectedRevision:result.review.revision,decision,note,resultSha256:result.result.sha256});if(generation!==workGeneration||workRef!==result.ref||workResult?.result?.sha256!==result.result.sha256)return;if(v.review.revision>=workResult.review.revision)workResult={...workResult,review:v.review};workGraduated=true;renderTraining();$('request-review-note').value='';renderWorkspaceResult(workResult);workNotice('Review saved. The original answer is unchanged.');
   // A saved review changes earned credit. Drain an older config read before a fresh one.
-  if(workProgress)workProgress.acceptedWork=null;renderTraining();
-  try{if(workConfigFlight)await workConfigFlight.catch(()=>{});if(generation===workGeneration)await workLoadConfig();}catch{if(generation===workGeneration){if(workProgress)workProgress.acceptedWork=null;renderTraining();workNotice('Review saved. Work milestones could not be refreshed.',true);}}
+  if(workProgress)workProgress.completedWork=null;renderTraining();
+  try{if(workConfigFlight)await workConfigFlight.catch(()=>{});if(generation===workGeneration)await workLoadConfig();}catch{if(generation===workGeneration){if(workProgress)workProgress.completedWork=null;renderTraining();workNotice('Review saved. Work milestones could not be refreshed.',true);}}
 }
  catch(e){if(generation===workGeneration&&authenticated)workNotice(e.code==='review_conflict'?'Another review was saved. Check saved status before reviewing again.':'Review saving was not confirmed. Check saved status to recover it; no provider call was made.',true);}
  finally{if(generation===workGeneration){workBusy=false;workButtons();}}
@@ -400,7 +403,7 @@ $('request-handoff').addEventListener('click',()=>{if(workResult?.resultAvailabl
 $('request-accept').addEventListener('click',()=>saveWorkspaceReview('accepted'));$('request-changes').addEventListener('click',()=>saveWorkspaceReview('changes_requested'));
 $('request-grade-score').addEventListener('change',workButtons);$('request-grade-save').addEventListener('click',saveWorkspaceGrade);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')stopWorkspacePoll();else if(authenticated&&activeView==='requests')void loadWorkspace();});
-`;
+`.replace(/^[ \t]+/gm,'');
 
 export const REVIEWED_REGRESSION_RESULT=Object.freeze({"body":"[Groq / openai/gpt-oss-20b]\n**Regression‑test table**\n\n| Input (label, used, limit) | Expected output |\n|---|---|\n| (\"Name\", 5, 10) | \"5 characters remaining.\" |\n| (\"Title\", 11, 10) | \"Title: 1 characters over the limit.\" |\n| (\"\", 0, 10) | \"Check this field.\" |\n| (\"Description\", \"five\", 10) | \"Check this field.\" |\n\nAll outputs follow the specification: blank label, invalid number, boundary, and one over.","entryId":"board-form-limits","inputSha256":"4c6707ce9ec428b6ab064c3508493eb7648c3a89ab92ea15e20236bfd3313da5","ref":"4ad59fcf6c082664d8c175aafd974af48be313aa8d5e9aa6e8d0a85d1ae5d5f8"});
 

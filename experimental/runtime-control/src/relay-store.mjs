@@ -25,6 +25,21 @@ export function recentJobReason(state,lastError,resultAvailable){
 
 const usageCount=value=>Number.isSafeInteger(value)&&value>=0&&value<=1_000_000_000;
 const usageSlug=value=>typeof value==='string'&&/^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,79}$/.test(value);
+const usableCredits=value=>Number.isFinite(value)&&value>=0;
+function creditSavingsPercent(baseline,assisted){
+ if(!usableCredits(baseline)||baseline===0||!usableCredits(assisted))return null;
+ const percent=(baseline-assisted)/baseline*100;
+ return Number.isFinite(percent)?percent:null;
+}
+function auditedCosts(record,variant){
+ let side;
+ try{side=JSON.parse(record)?.sides?.[variant];}catch{}
+ const read=name=>usableCredits(side?.[name])?side[name]:null;
+ const modelCredits=read('modelCredits'),setupCredits=read('setupCredits'),coordinationCredits=read('coordinationCredits'),fullCredits=read('fullCredits');
+ return {modelCredits,setupCredits,coordinationCredits,fullCredits,
+  classificationComplete:[modelCredits,setupCredits,coordinationCredits,fullCredits].every(value=>value!==null),
+  source:fullCredits===null?'Audited total unavailable.':'Audited immutable usage receipts; provider dollars separate.'};
+}
 function codexUsageRecord(value){
  const keys='cachedInputTokens,comparisonId,effort,id,inputTokens,model,outputTokens,recordedAt,tools,v,variant';
  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!==keys||value.v!==1
@@ -51,7 +66,9 @@ function openCodexUsage(db,owner){
  );
  CREATE INDEX IF NOT EXISTS relay_codex_followups_original ON relay_codex_followups(owner,original_id);
  CREATE TABLE IF NOT EXISTS relay_codex_workflows(owner TEXT NOT NULL,comparison_id TEXT NOT NULL,variant TEXT NOT NULL,record TEXT NOT NULL,PRIMARY KEY(owner,comparison_id,variant));
- CREATE TABLE IF NOT EXISTS relay_codex_workflow_calls(owner TEXT NOT NULL,comparison_id TEXT NOT NULL,ref TEXT NOT NULL,recorded_at INTEGER NOT NULL,PRIMARY KEY(owner,comparison_id,ref));`);
+ CREATE TABLE IF NOT EXISTS relay_codex_workflow_calls(owner TEXT NOT NULL,comparison_id TEXT NOT NULL,ref TEXT NOT NULL,recorded_at INTEGER NOT NULL,PRIMARY KEY(owner,comparison_id,ref));
+ CREATE TABLE IF NOT EXISTS relay_codex_quality(owner TEXT NOT NULL,id TEXT NOT NULL,root_id TEXT NOT NULL,record TEXT NOT NULL,PRIMARY KEY(owner,id));
+ CREATE INDEX IF NOT EXISTS relay_codex_quality_root ON relay_codex_quality(owner,root_id);`);
  const byId=db.prepare('SELECT record FROM relay_codex_usage WHERE owner=? AND id=?');
  const insert=db.prepare('INSERT OR IGNORE INTO relay_codex_usage(owner,id,recorded_at,comparison_id,variant,record) VALUES(?,?,?,?,?,?)');
  const recent=db.prepare(`SELECT record,original_id FROM relay_codex_usage AS runs
@@ -75,10 +92,49 @@ function openCodexUsage(db,owner){
   if(existing.length>=20)return 'conflict';
   db.prepare('INSERT INTO relay_codex_workflow_calls VALUES(?,?,?,?)').run(owner,value.comparisonId,value.ref,Date.now());return 'saved';
  }
+ function qualityRecord(value){
+  const keys='comparisonId,evidenceSha256,finalQualified,firstPassPassed,id,initialReviewId,kind,providerModel,providerRef,recheckIds,repairIds,rootId,taskFingerprint,v';
+  if(Object.keys(value).sort().join(',')!==keys||value.v!==1||value.kind!=='quality'||!usageSlug(value.comparisonId)
+   ||![value.id,value.rootId,value.initialReviewId,value.taskFingerprint,value.evidenceSha256].every(isId)
+   ||![value.firstPassPassed,value.finalQualified].every(x=>x===null||typeof x==='boolean')
+   ||![value.repairIds,value.recheckIds].every(ids=>Array.isArray(ids)&&ids.length<=20&&ids.every(isId)&&new Set(ids).size===ids.length)
+   ||value.repairIds.some(id=>value.recheckIds.includes(id)))return 'invalid';
+  const root=get(value.rootId),initial=get(value.initialReviewId);
+  if(!root||!initial||root.comparisonId!==value.comparisonId||!['baseline','assisted'].includes(root.variant)
+   ||initial.model!==root.model||initial.effort!==root.effort)return 'conflict';
+  const scope=JSON.parse(workflowById.get(owner,root.comparisonId,root.variant)?.record??'null');
+  if(!scope||value.initialReviewId!==root.id&&!scope.preparationIds.includes(value.initialReviewId))return 'conflict';
+  if([...value.repairIds,...value.recheckIds].some(id=>!get(id)||id===root.id||id===value.initialReviewId||followUp.get(owner,id)?.original_id!==root.id))return 'conflict';
+  if(root.variant==='baseline'){
+   if(value.providerRef!==null||value.providerModel!==null)return 'invalid';
+  }else{
+   if(!isId(value.providerRef)||![...scope.picardRefs,...linkedCalls.all(owner,root.comparisonId).map(r=>r.ref)].includes(value.providerRef))return 'conflict';
+   const call=providerById.get(owner,value.providerRef);let result;try{result=JSON.parse(call?.result_json??'null')}catch{}
+   const usage=sanitizeProviderUsage(result?.providerUsage);
+   if(call?.state!=='completed'||!usage||usage.model!==value.providerModel)return 'conflict';
+  }
+  const record=canonical(value),old=db.prepare('SELECT record FROM relay_codex_quality WHERE owner=? AND id=?').get(owner,value.id);
+  if(old)return old.record===record?'duplicate':'conflict';
+  if(db.prepare('SELECT count(*) AS n FROM relay_codex_quality WHERE owner=?').get(owner).n>=1000)return 'conflict';
+  if(db.prepare('SELECT count(*) AS n FROM relay_codex_quality WHERE owner=? AND root_id=?').get(owner,root.id).n>=64)return 'conflict';
+  db.prepare('INSERT INTO relay_codex_quality VALUES(?,?,?,?)').run(owner,value.id,root.id,record);return 'saved';
+ }
+ function qualityFor(run){
+  const raw=db.prepare('SELECT record FROM relay_codex_quality WHERE owner=? AND root_id=? ORDER BY rowid DESC LIMIT 1').get(owner,run.id)?.record;
+  if(!raw)return null;
+  const observation=JSON.parse(raw);
+  const investment=ids=>{
+   const rows=ids.map(get),complete=rows.every(Boolean);
+   return {turns:ids.length,complete,tokens:complete?rows.reduce((n,r)=>n+r.totalTokens,0):null,
+    estimatedCredits:complete&&rows.every(r=>r.model==='gpt-6.1-sol')?rows.reduce((n,r)=>n+((r.inputTokens-r.cachedInputTokens)*50+r.cachedInputTokens*2.5+r.outputTokens*250)/1000000,0):null};
+  };
+  return {...observation,repairs:investment(observation.repairIds),rechecks:investment(observation.recheckIds),
+   source:'Recorded native source-backed reviews; separate from owner acceptance. Preparation and coordination remain in full workflow cost.'};
+ }
  function workflowRecord(value){
   if(!value||Object.keys(value).sort().join(',')!=='comparisonId,kind,picardRefs,preparationIds,v,variant'
    ||value.v!==1||value.kind!=='workflow'||!usageSlug(value.comparisonId)||!['baseline','assisted'].includes(value.variant)
-   ||![value.preparationIds,value.picardRefs].every(ids=>Array.isArray(ids)&&ids.length<=20&&ids.every(isId)&&new Set(ids).size===ids.length)
+   ||![[value.preparationIds,64],[value.picardRefs,20]].every(([ids,limit])=>Array.isArray(ids)&&ids.length<=limit&&ids.every(isId)&&new Set(ids).size===ids.length)
    ||value.variant==='baseline'&&value.picardRefs.length)return 'invalid';
   const record=canonical({...value,preparationIds:[...value.preparationIds].sort(),picardRefs:[...value.picardRefs].sort()});
   return transaction(()=>{
@@ -103,6 +159,8 @@ function openCodexUsage(db,owner){
  }
  function project(){
    const entries=recent.all(owner).map(({record,original_id})=>({run:JSON.parse(record),originalId:original_id}));
+   const costByPair=db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='relay_codex_cost_breakdowns'").get()
+    ?db.prepare('SELECT record FROM relay_codex_cost_breakdowns WHERE owner=? AND comparison_id=? ORDER BY rowid DESC LIMIT 1'):null;
    const baselineByPair=new Map(),explicitAssisted=new Set(),followUps=new Map();
    for(const {run,originalId} of entries){
     if(run.variant==='baseline')baselineByPair.set(run.comparisonId,run);
@@ -126,6 +184,10 @@ function openCodexUsage(db,owner){
     const native={totalTokens:run.totalTokens+followUpTokens,inputTokens,cachedInputTokens,outputTokens,standardCredits,
      freshTokens:run.totalTokens-run.cachedInputTokens+fixes.reduce((sum,fix)=>sum+fix.totalTokens-fix.cachedInputTokens,0),
      followUpTokens,followUpCount:fixes.length,lastRecordedAt:fixes[0]?.recordedAt??run.recordedAt};
+    const quality=qualityFor(run);if(quality)native.quality=quality;
+    const costRow=costByPair?.get(owner,run.comparisonId);
+    // A missing audit permits the scoped estimate. An unusable saved audit stays unavailable.
+    if(costRow)native.costs=auditedCosts(costRow.record,run.variant);
     const raw=workflowById.get(owner,run.comparisonId,run.variant)?.record;
     if(!raw)return native;
     const scope=JSON.parse(raw),preps=scope.preparationIds.map(get),missing=[];
@@ -165,6 +227,14 @@ function openCodexUsage(db,owner){
     const inOrder=run.variant==='assisted'||baseline?.recordedAt>=run.recordedAt;
     const baselineTokens=baseline&&inOrder&&baseline.model===run.model&&baseline.effort===run.effort?baseline.totalTokens:null;
     const comparison=baselineTokens===null?null:{id:comparisonId,baseline:totals(baseline),assisted:totals(run)};
+    if(comparison){
+     for(const side of [comparison.baseline,comparison.assisted])if(!side.costs)side.costs={modelCredits:null,setupCredits:null,coordinationCredits:null,fullCredits:side.workflow?.complete?side.workflow.codexCredits:null,classificationComplete:false,source:'Detailed classification unavailable; missing categories are not zero.'};
+     comparison.savingsEligible=comparison.baseline.quality?.finalQualified===true&&comparison.assisted.quality?.finalQualified===true&&comparison.baseline.workflow?.complete===true&&comparison.assisted.workflow?.complete===true;
+     const b=comparison.baseline,a=comparison.assisted;
+     const scopedCreditsUsable=usableCredits(b.workflow?.codexCredits)&&b.workflow.codexCredits>0&&usableCredits(a.workflow?.codexCredits);
+     comparison.creditSavingsPercent=comparison.savingsEligible&&scopedCreditsUsable
+      ?creditSavingsPercent(b.costs.fullCredits,a.costs.fullCredits):null;
+    }
     return {...run,baselineTokens,
      baselineFreshTokens:baselineTokens===null?null:baselineTokens-baseline.cachedInputTokens,
      savedTokens:baselineTokens===null?null:baselineTokens-run.totalTokens,
@@ -177,25 +247,28 @@ function openCodexUsage(db,owner){
   // Keep the recent rows and the wider rolling window on one SQLite snapshot.
   db.exec('BEGIN');
   try{
-   const projected=project(),eligible=[],excluded={legacy:0,incomplete:0,unpriced:0};
+   const projected=project(),eligible=[],excluded={legacy:0,incomplete:0,unpriced:0,quality:0};
    for(const row of projected){
     const pair=row.comparison;
     if(!pair)continue;
     const b=pair.baseline.workflow,a=pair.assisted.workflow;
     if(!b&&!a){excluded.legacy++;continue;}
     if(!b?.complete||!a?.complete){excluded.incomplete++;continue;}
-    if(!Number.isFinite(b.codexCredits)||b.codexCredits<=0||!Number.isFinite(a.codexCredits)||a.codexCredits<0){excluded.unpriced++;continue;}
-    eligible.push({baseline:b.codexCredits,assisted:a.codexCredits,recordedAt:Math.max(pair.baseline.lastRecordedAt,pair.assisted.lastRecordedAt)});
+    if(!pair.savingsEligible){excluded.quality++;continue;}
+    if(pair.creditSavingsPercent===null){excluded.unpriced++;continue;}
+    eligible.push({baseline:pair.baseline.costs.fullCredits,assisted:pair.assisted.costs.fullCredits,recordedAt:Math.max(pair.baseline.lastRecordedAt,pair.assisted.lastRecordedAt)});
    }
-   const selected=eligible.slice(0,20),sampleCount=selected.length;
+   const selected=eligible.slice(0,20);
    const sum=key=>selected.reduce((n,row)=>n+row[key],0);
-   const baselineCredits=sampleCount?sum('baseline'):null,assistedCredits=sampleCount?sum('assisted'):null;
+   const baselineTotal=sum('baseline'),assistedTotal=sum('assisted');
+   const savedPercent=creditSavingsPercent(baselineTotal,assistedTotal);
+   const sampleCount=savedPercent===null?0:selected.length;
+   const baselineCredits=sampleCount?baselineTotal:null,assistedCredits=sampleCount?assistedTotal:null;
    const savedCredits=sampleCount?baselineCredits-assistedCredits:null;
    const rolling={windowSize:20,sampleCount,eligibleCount:eligible.length,baselineCredits,assistedCredits,savedCredits,
-    savedPercent:sampleCount?savedCredits/baselineCredits*100:null,
-    increasedCount:selected.filter(row=>row.assisted>row.baseline).length,
+    savedPercent,increasedCount:sampleCount?selected.filter(row=>row.assisted>row.baseline).length:0,
     fromRecordedAt:sampleCount?selected.at(-1).recordedAt:null,toRecordedAt:sampleCount?selected[0].recordedAt:null,excluded};
-   db.exec('COMMIT');return {runs:projected.slice(0,12),rolling};
+   db.exec('COMMIT');return {runs:projected.slice(0,12),comparisons:projected.filter(row=>row.comparison).slice(0,20).map(row=>row.comparison),rolling};
   }catch(error){db.exec('ROLLBACK');throw error;}
  }
  return {
@@ -203,6 +276,7 @@ function openCodexUsage(db,owner){
    if(!value||typeof value!=='object'||Array.isArray(value))return 'invalid';
    if(value.kind==='workflow')return workflowRecord(value);
    if(value.kind==='picard-call')return transaction(()=>callRecord(value));
+   if(value.kind==='quality')return transaction(()=>qualityRecord(value));
    const {followUpTo,...fields}=value;
    const run=codexUsageRecord(fields);
    if(!run)return 'invalid';
