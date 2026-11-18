@@ -1,65 +1,150 @@
-# What Picard does and how to use it
+<a id="what-picard-does-and-how-to-use-it"></a>
 
-Picard saves an approved AI request, sends it once and preserves the answer. It does not execute generated code or automatically replay uncertain calls. [How it works](ARCHITECTURE.md) · [Limitations](LIMITATIONS.md)
+# Your first useful Picard request
 
-## Try the offline demo
+Turn a rough note into a short checklist, save the answer and reopen it without
+sending another model request. This is the real-request path on your own relay.
 
-Install Node.js 24 and Git. The CI runtime is Node 24.22.1. There are no npm package dependencies to install. OpenSSL is needed for the local TLS test when running the full test suite.
+## Before you start
+
+**New relay? [Start with guided setup](SETUP.md).** It takes you from an existing
+Linux machine to your owner sign-in and an enabled Free workspace. Return here
+when your relay opens in the browser.
+
+Have these ready:
+
+- Your relay's **HTTPS address** and **owner sign-in**. Picard runs on your
+  machine; it does not provide a shared hosted account.
+- An enabled request workspace and a configured **Groq Free** key/enrollment.
+  Guided setup configures these together. For an existing manual installation,
+  use [provider setup](DEPLOYMENT.md#configuration-and-credentials) and
+  [workspace activation](V1.md#activation-and-limits).
+- **Ready for new work** in Overview. If blocked, read the reason in Groq before
+  approving anything. Existing saved answers can remain readable.
+
+Already set up? Use your own relay address and continue below.
+
+<a id="use-the-v1-owner-workspace-on-an-enrolled-host"></a>
+
+## Run your first useful request
+
+Sign in to your relay. **Expected result:** a saved checklist with three checks
+you can copy, review and use. The model drafts the checklist; it does not test
+your relay or perform the checks.
+
+1. Select **New request** in the console. In **Task title**, enter **My relay
+   checklist**. In **What should Picard do?**, paste:
+
+   > Turn this rough note into exactly three short checklist bullets, one per
+   > check: verify the installed version; confirm a saved answer opens; inspect
+   > the Groq readiness reason. Do not perform the checks or claim they passed.
+
+2. Click the **Review request** button below the brief. **Draft saved. No
+   provider call has been made.** confirms the draft. Check its exact brief,
+   context, fixed model and displayed limits.
+3. Select **Approve one call** when the draft is right. This sends one real
+   request to Groq. Follow it in **Jobs** and open the saved answer.
+4. Read the three bullets and copy or download the checklist. **Accept result**
+   records that the answer was useful; **Request changes** records your feedback.
+   Neither applies code, performs the checklist or starts another call.
+5. Leave the answer and reopen the same request from **Jobs**. It should show
+   the same saved answer, without asking you to approve or send it again.
+
+If the result is failed, incomplete or uncertain, keep its reference and read
+the reason. Do not send a replacement request just to retry it.
+
+![Write a brief, review and approve it, follow the job, then reopen and review its saved answer](images/first-request.svg)
+
+A quality grade is separate from the owner review. Onboarding ends after the
+first review; rank progress remains available. Open **Rank guide** from
+**Your progress**, or use **Settings → Replay walkthrough** to revisit the
+steps. Later ranks depend on accepted useful results, not clicks or elapsed time.
+See [ranks and unlocks](OWNER-FEATURES.md#earned-work).
+
+<a id="try-the-offline-demo"></a>
+
+## Try it locally
+
+**Synthetic demo only:** no real model, API key or account is used, and the
+answers do not prove live provider readiness. Install Git and **Node.js 24**:
 
 ```sh
 git clone https://github.com/bmartynowicz/picard-relay.git
 cd picard-relay
-npm run demo
-```
-
-Expected ending:
-
-```text
-One synthetic request, one stored answer, duplicate replay suppressed.
-No network, API key, billing, deployment, or live AI invocation.
-```
-
-The demo does not start the web console. To try the synthetic request workspace instead, run:
-
-```sh
 npm run preview:v1
 ```
 
-Open the printed loopback address on the same computer; press Ctrl+C in the terminal to stop the preview. This preview uses disposable fixture data and does not call an AI provider. It is not a production installation.
+Open the printed loopback address on the same computer to rehearse the request
+steps. It returns a fixed sample proposal, not a model answer to your brief.
+The preview has temporary data; Ctrl+C stops it. `npm run demo` runs the
+separate offline terminal example, ending with `One synthetic request, one stored answer, duplicate replay suppressed.`
+Neither command installs a production service. `npm start` needs explicit
+runtime configuration; it is not the preview command.
 
-`npm start` is disabled without explicit configuration. For the full test commands and source layout, see [Development](DEVELOPMENT.md). For a real installation, see [Operations](OPERATIONS.md); there is no one-command production installer.
+## After your first answer
 
-## Use the V1 owner workspace on an enrolled host
+Use another small task you actually need help with. Include only text you
+intend to send to the configured provider. Generated code remains a proposal
+for you to review. [Limits](LIMITATIONS.md) · [All guides](README.md)
 
-For a quick visual introduction, take the [15-second cockpit tour](COCKPIT-TOUR.md).
-Activate the insignia five times for the optional space view; choose a navigation
-item to open its panel and click exposed space to retract it.
+## Find your way around
 
-![Four steps: write a brief, review and approve, follow the job, then reopen and review the saved answer](images/first-request.svg)
+| View | Next useful action |
+| --- | --- |
+| Overview | Continue onboarding, open the rank guide, inspect readiness and recent work. |
+| Jobs | Find a request and reopen its saved answer. |
+| Requests | Write a brief, review exact input and approve one call. |
+| Groq | Inspect readiness and use **Replace key** when the host supports it. |
+| System | Check the installed version, health and connected update button. |
 
-Sign in, open **Requests**, write a brief and choose **Review request**. Check
-the exact input and limits, then **Approve one call**. In **Jobs**, **Open request**
-follows progress and recovers the saved answer. Review it, then choose
-**Accept result** or **Request changes**. Copy or download it when ready.
-**Your progress** shows the next onboarding step; the insignia
-gains detail as you advance. See [V1](V1.md) and [ranks](OWNER-FEATURES.md#earned-work).
-Hosts without the workspace enabled use the legacy picker below.
+Select **Cockpit view** to use the windshield layout. Its **Workspace**,
+**Stars** and motion controls are separate. Click a navigation control to open
+its reading panel; click it again, exposed space or Close, or press Escape to
+retract it. The five-click logo shortcut remains available, but is not needed to
+discover Cockpit Mode. Preferences are remembered in this browser.
 
-## Use an enrolled host with the legacy finite picker
+**Stealth** has an **Alt+Shift+S** shortcut. Optional **Auto** settings cover
+tab switching and inactivity; they start off. This changes the display, not your
+network identity. **Refresh · Live 15s** reads status. Reload the page to load an
+updated interface. The [tour](COCKPIT-TOUR.md) covers the controls and clearly
+labels its earlier recorded walkthrough.
 
-1. Open the HTTPS console address supplied by its operator and sign in. Picard permits one active owner session; another login can replace it.
-2. Read **Overview**. A reachable relay can still be unable to accept new work. Check the explanation, observation time and result-recovery status.
-3. For an existing job, open **Jobs**, choose a row and select **Open saved result** when available. **Requests** also lets you select an enrolled input and **Check saved result**. These reads do not call the model again.
-4. For new work, review the exact enrolled input and request slot in **Requests**. **Approve and queue** is the action that can authorize one bounded model call. It is unavailable when that slot is spent, expired, blocked or not currently verified as available.
-5. Treat the saved answer as untrusted proposal text. Check any review/correction note, inspect the original saved text, and review the content before using it elsewhere.
+## Connect your coding assistant
 
-New arbitrary text cannot be typed into the legacy finite picker. The operator must enroll an appropriate finite catalogue and the owner must approve the exact request. A different request needs fresh authority; copying an old slot or clearing a consumed marker is not a supported shortcut.
+Use [independent tool access](WORKSPACE-AGENT.md) for a local stdio MCP
+connection. `read` access exposes status, history and saved answers; opt-in
+`approved-work` mode also prepares drafts and submits a separately
+owner-approved draft. The assistant cannot approve its own work or grade it.
+Tool access is revocable, expires explicitly and survives browser sign-in changes.
 
-## Read the outcomes correctly
+When setup requires a recent password check, use the private terminal command
+rather than sending a password in chat:
 
-- **Completed** means a response was durably saved. It does not mean generated code is correct, executed, merged, deployed or accepted by a person.
-- **Failed / incomplete** is a recorded failed outcome. A spent request remains spent.
-- **Uncertain** means the invocation may have happened without a dependable final receipt. Preserve the evidence and seek operator review. Do not retry it automatically.
-- **Provider unavailable / no usable allowance** can coexist with healthy service and working saved-result recovery.
+```sh
+node tools/workspace-request.mjs login --origin https://YOUR-RELAY --fresh
+```
 
-Continue with the [console guide](CONSOLE-WORKSPACE.md), [limitations](LIMITATIONS.md) and [known work](WORK-REGISTER.md).
+Follow the guide for enrollment, protected storage, exact approval and proxy
+configuration. To check an exact public Picard commit through the separate
+fixed CI worker, use [the coding workflow](../experimental/compute-broker/CODING-WORKFLOW.md).
+A model proposal is not a CI result.
+
+<a id="read-the-outcomes-correctly"></a>
+
+## If something stops
+
+- **New work blocked:** read the reason in Overview/Groq. Saved answers may
+  still open. An expired grant does not renew automatically.
+- **Completed:** an answer was saved; inspect it before use. Acceptance,
+  execution, merge and deployment remain separate actions.
+- **Failed, incomplete or uncertain:** keep the request identity and evidence.
+  Do not replay the call automatically or create a replacement request to retry.
+- **Tool access missing:** check enrollment/expiry and the fixed HTTPS proxy
+  routes. An older proxy can strip bearer authentication. See the
+  [upgrade checklist](WORKSPACE-AGENT.md#upgrade-an-existing-https-proxy).
+
+<a id="use-an-enrolled-host-with-the-legacy-finite-picker"></a>
+
+Older finite-picker hosts offer enrolled inputs and **Approve and queue**
+instead of a free-text brief. An operator must enroll that exact input and slot;
+spent slots stay spent. See [the legacy API](API.md) for that compatibility path.

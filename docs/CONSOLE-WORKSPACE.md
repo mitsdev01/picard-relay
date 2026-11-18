@@ -32,6 +32,31 @@ layout. Rotating or resizing keeps the current request and answer open.
 
 ![Choose new work or recover a saved result](images/using-picard.svg)
 
+## Follow an interrupted handoff
+
+Requests separates saved approval from execution progress:
+
+| Reading | Recorded evidence and next step |
+| --- | --- |
+| Approval saved | Registration was confirmed, but its latest status could not be read. Check saved status; execution is not confirmed. |
+| Approval saved · queued | The original request is durably queued; its provider invocation has not started in this observation. |
+| Preparing | A relay worker has claimed it. Provider handoff is not confirmed. |
+| Running | The invocation boundary is recorded. This does not prove remote acceptance. |
+| Handoff unconfirmed | The browser did not receive confirmation. Use **Check saved status** for the same request. |
+| Outcome unknown | The request is spent. Check its saved status or ask the operator; do not resend it. |
+
+The observation timestamp remains separate. A failed read preserves the last
+saved answer and disables actions that need fresh evidence. Checking status
+does not create an approval, replacement request or provider call. A completed
+answer remains readable when new execution is blocked. Failed requests are not
+automatically retryable.
+
+For synthetic browser qualification, run `node examples/recovery-preview.mjs`
+and open its printed `/fixtures` address. This uses a disposable local ledger,
+including an uncertain boundary and a retained answer. To reproduce a lost
+registration response, set `PICARD_RECOVERY_SCENARIO=lost-response` first. The
+preview never contacts a provider, resumes uncertain work or changes a live relay.
+
 ## Measure Codex usage
 
 **Overview → Savings** records completed Codex turns once the connection is
@@ -136,10 +161,22 @@ Open **… → Feedback** and choose a type. In cockpit mode, right-click an
 exposed part of the starfield to start a bug report. The menu works with a
 keyboard or touch.
 
-Enter a title and details, choose **Preview**, then **Copy draft**. Open the
-GitHub issue form and paste the first line as the title and the rest as the
-description. GitHub issues are public. The preview contains only your typed
-text and the feedback type. Closing it clears the draft.
+Enter a title and details, choose **Preview**, then **Review on GitHub**.
+The title and description are already filled in. Review them, sign in to
+GitHub if needed, and submit there. The public destination is
+`bmartynowicz/picard-relay`; opening the form does not create an issue.
+
+The preview contains only your typed text and the feedback type. Editing or
+closing it clears the prepared link. Picard adds no logs, saved answers or
+credentials, makes no AI call, and does not store the draft. Opening GitHub
+puts the draft in that tab's URL and browser history, so leave private data out.
+**Copy draft** remains available. If the encoded link exceeds 8,000 characters,
+Picard keeps the complete draft and offers a blank GitHub form instead of
+shortening it. Paste its first line as the title and the rest as the description.
+
+This uses GitHub's [issue URL parameters](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/creating-an-issue#creating-an-issue-from-a-url-query),
+with no GitHub write credential on the relay. Submission and any retry happen
+on GitHub, where the created issue has its permanent link.
 
 ## Earn Kills and Captures
 

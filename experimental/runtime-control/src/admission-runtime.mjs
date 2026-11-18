@@ -7,7 +7,7 @@ import {createAdmissionStore,admissionHash,legacyMarkerName,stop} from './admiss
 import {readBoundAdmissionPolicy} from './admission-policy.mjs';
 import {priorGroqEnrollmentIds,recordedGroqKeyExpiry,validCostEnrollmentMetadata} from './admission-enrollment.mjs';
 import {createAdmissionAssistantAdapter} from './admission-dispatch.mjs';
-import {createAdmissionHandler,createWorkspaceHandler,parseMachineClientRegistry,parseMachineReviewClientRegistry,matchMachineClient} from './admission-handler.mjs';
+import {createAdmissionHandler,createWorkspaceHandler,createPublicTestHandler,createBadgeInterestHandler,parseMachineClientRegistry,parseMachineReviewClientRegistry,matchMachineClient} from './admission-handler.mjs';
 import {admissionConsoleHtml} from './admission-ui.mjs';
 import {groqHttpsFetch} from './https-fetch.mjs';
 import {TextDecoder} from 'node:util';
@@ -84,7 +84,7 @@ export function readGroqReplacementHistory(file,sha256,current,identity){
  return {...source,record,priorEnrollmentIds:priorGroqEnrollmentIds(record,current)};
 }
 export function admissionConfigurationDigest({config,enrollmentId,keySha256,markerDirectory}){
- return admissionHash(canonical({v:1,ownerId:config.ownerId,taskId:config.allowedTaskId,assistantId:config.assistantId,keyId:config.keyId,consoleOrigins:[...config.consoleOrigins].sort(),enrollmentId,keySha256,markerDirectory,legacyBaselineFile:config.admissionLegacyBaselineFile??'',legacyBaselineSha256:config.admissionLegacyBaselineSha256??'',...(config.admissionSignedBridgeEnabled===true?{signedBridgeAdmission:true}:{}),...(config.admissionReusableBoardEnabled===true?{reusableBoardAdmission:true}:{})}));
+ return admissionHash(canonical({v:1,ownerId:config.ownerId,taskId:config.allowedTaskId,assistantId:config.assistantId,keyId:config.keyId,consoleOrigins:[...config.consoleOrigins].sort(),enrollmentId,keySha256,markerDirectory,legacyBaselineFile:config.admissionLegacyBaselineFile??'',legacyBaselineSha256:config.admissionLegacyBaselineSha256??'',...(config.admissionSignedBridgeEnabled===true?{signedBridgeAdmission:true}:{}),...(config.admissionReusableBoardEnabled===true?{reusableBoardAdmission:true}:{}),...(config.admissionMeasurementRunsEnabled===true?{measurementRunAdmission:true}:{})}));
 }
 export function readLegacyAdmissionMarkers(directory,expectedNames){
  let fd;try{
@@ -135,11 +135,43 @@ export function createWorkspaceMachineAuthenticator(codingFile,reviewFile){
   return null;
  };
 }
+// Optional, read-only historical proof enrollment. Hash pinning and protected
+// ownership are independent of the result row; no database or marker is changed.
+export function createHistoricalModelProofReader({file,sha256}={}){
+ if(!file&&!sha256)return null;
+ return ref=>{
+  if(typeof sha256!=='string'||!/^[a-f0-9]{64}$/.test(sha256))stop('existing_record_invalid');
+  const raw=readExistingAdmissionFile(file,262144,{rootOnly:true}).text;
+  if(admissionHash(raw)!==sha256)stop('existing_record_invalid');
+  const proof=JSON.parse(raw);
+  if(!proof||Object.keys(proof).sort().join(',')!=='kind,records,v'||proof.v!==1||proof.kind!=='PICARD_HISTORICAL_MODEL_RESULTS_V1'
+   ||!Array.isArray(proof.records)||proof.records.length>16)stop('existing_record_invalid');
+  const ids=proof.records.map(r=>r?.gate?.eventId);
+  if(ids.some(id=>typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id))||new Set(ids).size!==ids.length)stop('existing_record_invalid');
+  return proof.records.find(r=>r.gate.eventId===ref)??null;
+ };
+}
+
+export function createRuntimeAdmissionHandlers({workspaceEnabled=false,publicTestEnabled=false,badgeInterestEnabled=false,proxyConfigured=false,publicOrigin,auth,store,binding,origins,now,loadPolicy,currentAvailability,readHistoricalModelProof=null,authenticateMachine=null}){
+ // Public-trial origin is separate authority. The existing private picker keeps
+ // its exact six-field binding and rejects every other unexpected field.
+ const {publicTestOrigin,...ownerBinding}=binding;
+ const handler=createAdmissionHandler({activationEnabled:true,store,auth,loadPolicy,binding:ownerBinding,origins,now,currentAvailability});
+ const workspace=createWorkspaceHandler({enabled:workspaceEnabled,store,auth,loadPolicy,binding,origins,now,currentAvailability,readHistoricalModelProof,authenticateMachine});
+ const publicTest=createPublicTestHandler({enabled:publicTestEnabled,proxyConfigured,publicOrigin,auth,store,binding,origins,now,currentAvailability,loadPolicy});
+ const badgeInterest=createBadgeInterestHandler({enabled:badgeInterestEnabled,proxyConfigured,publicOrigin,store,binding,origins,now});
+ return async(req,res)=>await badgeInterest(req,res)||await publicTest(req,res)||await workspace(req,res)||await handler(req,res);
+}
 export function prepareAdmissionRuntime({activationEnabled=false,config,env=process.env,now=Date.now,fetchImpl=groqHttpsFetch}={}){
  if(activationEnabled!==true)return null;
  if(process.platform!=='linux'||config?.admissionEnabled!==true||config.consoleEnabled!==true||!config.consoleOrigins?.length||env.BRIDGE_PROVIDER!=='groq'||env.GROQ_ENABLED!=='true'||env.GROQ_ONE_SHOT!=='true'||config.assistantId!=='groq:openai/gpt-oss-20b')stop('admission_configuration_invalid');
  if(config.admissionReusableBoardEnabled===true&&config.admissionSignedBridgeEnabled!==true)stop('admission_configuration_invalid');
+ if(config.admissionMeasurementRunsEnabled===true&&config.admissionReusableBoardEnabled!==true)stop('admission_configuration_invalid');
  if(config.workspaceEnabled===true&&config.admissionReusableBoardEnabled!==true)stop('admission_configuration_invalid');
+ const publicTestEnabled=env.BRIDGE_PUBLIC_TEST_ENABLED==='true';
+ const badgeInterestEnabled=env.BRIDGE_BADGE_INTEREST_ENABLED==='true';
+ if(badgeInterestEnabled&&(config.workspaceEnabled!==true||env.BRIDGE_PUBLIC_TEST_PROXY!=='caddy-overwrite-v1'||!env.BRIDGE_PUBLIC_TEST_ORIGIN))stop('badge_interest_configuration_invalid');
+ if(publicTestEnabled&&(config.workspaceEnabled!==true||env.BRIDGE_PUBLIC_TEST_PROXY!=='caddy-overwrite-v1'||!env.BRIDGE_PUBLIC_TEST_ORIGIN))stop('public_test_configuration_invalid');
  // Anchor to the EXISTING retained enrollment and key. A catalogue cannot invent
  // another enrollment to evade an old shared uncertainty/cost latch.
  const gateFile=readExistingAdmissionFile(env.GROQ_FREE_GATE_FILE),keyFile=readExistingAdmissionFile(env.GROQ_API_KEY_FILE),legacy=JSON.parse(gateFile.text),apiKey=keyFile.text.trim(),e=legacy.costEnrollment;
@@ -150,6 +182,7 @@ export function prepareAdmissionRuntime({activationEnabled=false,config,env=proc
   catch{/* Optional display metadata can never block startup or authorize work. */}
  }
  const markerDirectory=path.dirname(env.GROQ_ONCE_MARKER_FILE??''),binding={ownerId:config.ownerId,taskId:config.allowedTaskId,assistantId:config.assistantId,enrollmentId:legacy.enrollmentId,keySha256:e.keySha256,configurationSha256:''};
+ if(publicTestEnabled)binding.publicTestOrigin=env.BRIDGE_PUBLIC_TEST_ORIGIN;
  binding.configurationSha256=admissionConfigurationDigest({config,enrollmentId:binding.enrollmentId,keySha256:binding.keySha256,markerDirectory});
  const catalogueLoader=createCatalogueLoader({activationEnabled:true,file:config.admissionCatalogueFile,expectedUid:0,expectedGid:process.getgid()});
  const loadLegacyBaseline=createLegacyBaselineLoader({activationEnabled:true,file:config.admissionLegacyBaselineFile,expectedSha256:config.admissionLegacyBaselineSha256,expectedUid:0,expectedGid:process.getgid()});
@@ -167,16 +200,15 @@ export function prepareAdmissionRuntime({activationEnabled=false,config,env=proc
  const loadBoundFiles=()=>{for(const old of boundFiles){if(fs.realpathSync(old.file)!==old.file||fingerprint(fs.lstatSync(old.file,{bigint:true}))!==old.identity)stop('admission_configuration_changed');}return catalogueLoader();};
  const loadPolicy=()=>{if(hasReplacement&&!history)stop('groq_replacement_invalid');return loadBoundFiles();};
  readBoundAdmissionPolicy(loadBoundFiles,binding);
- const adapter=createAdmissionAssistantAdapter({activationEnabled:true,signedBridgeEnabled:config.admissionSignedBridgeEnabled===true,workspaceEnabled:config.workspaceEnabled===true,reusableBoardEnabled:config.admissionReusableBoardEnabled===true,bridgeKeyId:config.keyId,loadPolicy,binding,apiKey,markerDirectory,now,fetchImpl,priorEnrollmentIds:history?.priorEnrollmentIds});
+ const adapter=createAdmissionAssistantAdapter({activationEnabled:true,signedBridgeEnabled:config.admissionSignedBridgeEnabled===true,workspaceEnabled:config.workspaceEnabled===true,publicTestEnabled,reusableBoardEnabled:config.admissionReusableBoardEnabled===true,measurementRunsEnabled:config.admissionMeasurementRunsEnabled===true,bridgeKeyId:config.keyId,loadPolicy,binding,apiKey,markerDirectory,now,fetchImpl,priorEnrollmentIds:history?.priorEnrollmentIds});
  const groqReplacement=createGroqReplacementBridge({enabled:env.BRIDGE_GROQ_KEY_REPLACEMENT_ENABLED==='true'&&config.workspaceEnabled===true,project:e.accountLabel,enrollmentId:binding.enrollmentId,now});
  return {adapter,attach({store,control,auth,baseHtml}){
   if(!auth)stop('admission_configuration_invalid');
-  const admissionStore=createAdmissionStore({activationEnabled:true,dbPath:config.dbPath,relayStore:store,now,loadLegacyBaseline,legacyBinding:{...binding,enrollmentId:legacyEnrollmentId},reusableBoardEnabled:config.admissionReusableBoardEnabled===true,workspaceEnabled:config.workspaceEnabled===true,reusableBinding:{ownerId:binding.ownerId,enrollmentId:binding.enrollmentId},readLegacyMarkers:names=>readLegacyAdmissionMarkers(markerDirectory,names)});
+  const admissionStore=createAdmissionStore({activationEnabled:true,dbPath:config.dbPath,relayStore:store,now,loadLegacyBaseline,legacyBinding:{...binding,enrollmentId:legacyEnrollmentId},reusableBoardEnabled:config.admissionReusableBoardEnabled===true,measurementRunsEnabled:config.admissionMeasurementRunsEnabled===true,workspaceEnabled:config.workspaceEnabled===true,reusableBinding:{ownerId:binding.ownerId,enrollmentId:binding.enrollmentId},readLegacyMarkers:names=>readLegacyAdmissionMarkers(markerDirectory,names)});
   try{
   adapter.attachStore(admissionStore,{accepting:()=>control.accepting});
-  const handler=createAdmissionHandler({activationEnabled:true,store:admissionStore,auth,loadPolicy,binding,origins:config.consoleOrigins,now,currentAvailability:adapter.availability});
-  const workspace=createWorkspaceHandler({enabled:config.workspaceEnabled===true,store:admissionStore,auth,loadPolicy,binding,origins:config.consoleOrigins,now,currentAvailability:adapter.availability,authenticateMachine:createWorkspaceMachineAuthenticator(config.machineClientsFile,config.machineReviewClientsFile)});
-  return {handler:async(req,res)=>await workspace(req,res)||await handler(req,res),groqKeyExpiresAt,groqReplacement,gradeResult:config.workspaceEnabled===true?input=>{admissionStore.recordAttempt(admissionHash(canonical([binding.ownerId,'quality-grades'])));return admissionStore.saveWorkspaceGrade(input);}:null,readGrade:config.workspaceEnabled===true?ref=>admissionStore.workspaceGrade(ref):null,html:admissionConsoleHtml(baseHtml,{activationEnabled:true,workspaceEnabled:config.workspaceEnabled===true,theme:'captain'}),htmlThemes:config.workspaceEnabled===true?Object.fromEntries([['admiral','standard'],['captain','captain']].map(([name,theme])=>[name,admissionConsoleHtml(baseHtml,{activationEnabled:true,workspaceEnabled:true,theme})])):null,dispatchStore:{...store,claimNext:input=>adapter.claimNext(input)},close:()=>admissionStore.close()};
+  const handler=createRuntimeAdmissionHandlers({workspaceEnabled:config.workspaceEnabled===true,publicTestEnabled,badgeInterestEnabled,proxyConfigured:env.BRIDGE_PUBLIC_TEST_PROXY==='caddy-overwrite-v1',publicOrigin:env.BRIDGE_PUBLIC_TEST_ORIGIN,auth,store:admissionStore,binding,origins:config.consoleOrigins,now,currentAvailability:adapter.availability,loadPolicy,authenticateMachine:createWorkspaceMachineAuthenticator(config.machineClientsFile,config.machineReviewClientsFile),readHistoricalModelProof:createHistoricalModelProofReader({file:env.BRIDGE_HISTORICAL_MODEL_RESULTS_FILE,sha256:env.BRIDGE_HISTORICAL_MODEL_RESULTS_SHA256})});
+  return {handler,groqKeyExpiresAt,groqReplacement,gradeResult:config.workspaceEnabled===true?input=>{admissionStore.recordAttempt(admissionHash(canonical([binding.ownerId,'quality-grades'])));return admissionStore.saveWorkspaceGrade(input);}:null,readGrade:config.workspaceEnabled===true?ref=>admissionStore.workspaceGrade(ref):null,html:admissionConsoleHtml(baseHtml,{activationEnabled:true,publicTestEnabled,workspaceEnabled:config.workspaceEnabled===true,theme:'captain'}),htmlThemes:config.workspaceEnabled===true?Object.fromEntries([['admiral','standard'],['captain','captain']].map(([name,theme])=>[name,admissionConsoleHtml(baseHtml,{activationEnabled:true,publicTestEnabled,workspaceEnabled:true,theme})])):null,dispatchStore:{...store,claimNext:input=>adapter.claimNext(input)},close:()=>admissionStore.close()};
   }catch{admissionStore.close();stop('admission_configuration_invalid');}
  }};
 }

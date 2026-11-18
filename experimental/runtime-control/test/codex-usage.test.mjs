@@ -5,6 +5,7 @@ import {mkdtemp,rm,writeFile} from 'node:fs/promises';
 import {createServer,request} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
 import {createRelayStore} from '../src/relay-store.mjs';
 import {createConsoleHandler} from '../src/oracle-service.mjs';
 import {readCodexExecTools,readCompletedCodexUsage} from '../../../tools/codex-usage-notify.mjs';
@@ -16,6 +17,26 @@ const run={
 };
 const assisted={...run,id:'b'.repeat(64),recordedAt:2000,inputTokens:7500,cachedInputTokens:5500,outputTokens:500,
  tools:['compute_ci_status'],variant:'assisted'};
+
+function passingQuality(usage,root,providerRef=null){
+ const hash=value=>createHash('sha256').update(value).digest('hex');
+ assert.equal(usage.record({v:1,kind:'quality',id:hash('quality:'+root.id),comparisonId:root.comparisonId,
+  rootId:root.id,initialReviewId:root.id,taskFingerprint:hash('requirements:'+root.comparisonId),evidenceSha256:hash('fixture-review:'+root.id),
+  firstPassPassed:true,finalQualified:true,repairIds:[],recheckIds:[],providerRef,
+  providerModel:providerRef===null?null:'openai/gpt-oss-20b'}),'saved');
+}
+
+// A local durable result fixture; no adapter, network, model call or billed usage.
+async function completedProviderFixture(store,comparisonId){
+ const at=Date.now(),p={v:1,ownerId:'owner',taskId:'task',requestId:'fixture-'+comparisonId,grantId:'fixture-grant',assistantId:'groq:openai/gpt-oss-20b',grantExpiresAt:at+60000,
+  request:{text:'Synthetic accounting fixture only.',createdAt:new Date(at).toISOString(),answerTo:null},context:{title:'Synthetic comparison',nextAction:'',latestFinding:''}};
+ p.eventId=await digest(canonical([p.ownerId,p.taskId,p.requestId]));p.payloadHash=await payloadHash(p);
+ await store.accept(p);const claim=store.claimNext({workerId:'fixture',claimTtlMs:60000});
+ const identity={owner:'owner',task:'task',requestId:p.eventId,attempt:claim.attempt,workerId:'fixture'};
+ store.startInvocation(identity);store.appendReply({...identity,eventId:'resp:'+p.eventId,kind:'answer',outcomeKind:'information',body:'Synthetic saved answer',statusChange:null,
+  providerUsage:{v:1,provider:'groq',model:'openai/gpt-oss-20b',inputTokens:1,outputTokens:0,totalTokens:1}});store.markCompleted(identity);
+ return p.eventId;
+}
 
 test('whole workflow persists preparation, actual provider usage and late fixes without double counting',async t=>{
  const store=createRelayStore({dbPath:':memory:'});t.after(()=>store.close());
@@ -43,6 +64,9 @@ test('whole workflow persists preparation, actual provider usage and late fixes 
  assert.equal(pair.assisted.workflow.codexTokens,8600);
  assert.equal(pair.assisted.workflow.providerBilledUsd,null);
  assert(pair.assisted.workflow.complete);
+ assert.equal(usage.overview().rolling.sampleCount,0);
+ assert.equal(usage.overview().rolling.excluded.quality,1);
+ passingQuality(usage,root);passingQuality(usage,withPicard,p.eventId);
  assert.equal(usage.overview().rolling.sampleCount,1);
  assert.equal(usage.overview().rolling.assistedCredits,pair.assisted.workflow.codexCredits);
  const fix={...preparation,id:'d'.repeat(64),recordedAt:4000,followUpTo:withPicard.id};
@@ -68,40 +92,44 @@ test('whole workflow persists preparation, actual provider usage and late fixes 
  assert.equal(other.overview().rolling.sampleCount,0);
 });
 
-function fullPair(usage,index,baselineInput,assistedInput,{model='gpt-6.1-sol',scope=true}={}){
+async function fullPair(store,usage,index,baselineInput,assistedInput,{model='gpt-6.1-sol',scope=true}={}){
  const comparisonId='rolling-'+index;
  const id=side=>createHash('sha256').update(comparisonId+side).digest('hex');
  const baseline={...run,id:id('baseline'),comparisonId,model,inputTokens:baselineInput,cachedInputTokens:0,outputTokens:0,recordedAt:index*10};
  const withPicard={...baseline,id:id('assisted'),variant:'assisted',tools:['prepare_context'],inputTokens:assistedInput,recordedAt:index*10+1};
  for(const row of [baseline,withPicard])assert.equal(usage.record(row),'saved');
- if(scope)for(const variant of ['baseline','assisted'])assert.equal(usage.record({v:1,kind:'workflow',comparisonId,variant,preparationIds:[],picardRefs:[] }),'saved');
+ if(scope){
+  const ref=await completedProviderFixture(store,comparisonId);
+  for(const variant of ['baseline','assisted'])assert.equal(usage.record({v:1,kind:'workflow',comparisonId,variant,preparationIds:[],picardRefs:variant==='assisted'?[ref]:[] }),'saved');
+  passingQuality(usage,baseline);passingQuality(usage,withPicard,ref);
+ }
  return {baseline,withPicard};
 }
 
 test('rolling savings weights complete totals, retains increases and survives restart with owner isolation',async t=>{
  const directory=await mkdtemp(join(tmpdir(),'picard-rolling-'));
- const dbPath=join(directory,'relay.sqlite');let store=createRelayStore({dbPath});
+ const dbPath=join(directory,'relay.sqlite');let store=createRelayStore({dbPath,now:()=>0});
  t.after(async()=>{store.close();await rm(directory,{recursive:true,force:true});});
  let usage=store.openCodexUsage('owner');
- fullPair(usage,1,20000,10000); // 1 versus 0.5 credits: 50% saved.
- fullPair(usage,2,2000000,2200000); // 100 versus 110: 10% more.
- fullPair(usage,3,1000,500,{scope:false});
- fullPair(usage,4,1000,500,{model:'unknown-model'});
- const incomplete=fullPair(usage,5,1000,500,{scope:false});
+ await fullPair(store,usage,1,20000,10000); // 1 versus 0.5 credits: 50% saved.
+ await fullPair(store,usage,2,2000000,2200000); // 100 versus 110: 10% more.
+ await fullPair(store,usage,3,1000,500,{scope:false});
+ await fullPair(store,usage,4,1000,500,{model:'unknown-model'});
+ const incomplete=await fullPair(store,usage,5,1000,500,{scope:false});
  usage.record({v:1,kind:'workflow',comparisonId:incomplete.baseline.comparisonId,variant:'baseline',preparationIds:['f'.repeat(64)],picardRefs:[]});
  const expected=usage.overview().rolling;
  assert.equal(expected.sampleCount,2);assert.equal(expected.baselineCredits,101);assert.equal(expected.assistedCredits,110.5);
  assert.equal(expected.savedCredits,-9.5);assert(Math.abs(expected.savedPercent-(-9.5/101*100))<1e-10);
- assert.equal(expected.increasedCount,1);assert.deepEqual(expected.excluded,{legacy:1,incomplete:1,unpriced:1});
+ assert.equal(expected.increasedCount,1);assert.deepEqual(expected.excluded,{legacy:1,incomplete:1,unpriced:1,quality:0});
  assert.equal(store.openCodexUsage('other').overview().rolling.sampleCount,0);
- store.close();store=createRelayStore({dbPath});usage=store.openCodexUsage('owner');
+ store.close();store=createRelayStore({dbPath,now:()=>0});usage=store.openCodexUsage('owner');
  assert.deepEqual(usage.overview().rolling,expected);
 });
 
-test('rolling window uses twenty comparisons beyond the twelve rows and updates an old root once for a fix',t=>{
- const store=createRelayStore({dbPath:':memory:'});t.after(()=>store.close());const usage=store.openCodexUsage('owner');
- const first=fullPair(usage,1,1000000,1000000);
- for(let i=2;i<=22;i++)fullPair(usage,i,20000,10000);
+test('rolling window uses twenty comparisons beyond the twelve rows and updates an old root once for a fix',async t=>{
+ const store=createRelayStore({dbPath:':memory:',now:()=>0});t.after(()=>store.close());const usage=store.openCodexUsage('owner');
+ const first=await fullPair(store,usage,1,1000000,1000000);
+ for(let i=2;i<=22;i++)await fullPair(store,usage,i,20000,10000);
  // Newer unpaired activity fills all twelve visible rows without changing the wider window.
  for(let i=0;i<15;i++)usage.record({...run,id:createHash('sha256').update('unpaired'+i).digest('hex'),comparisonId:null,variant:null,recordedAt:1000+i});
  let snapshot=usage.overview();
@@ -116,6 +144,26 @@ test('rolling window uses twenty comparisons beyond the twelve rows and updates 
  assert.equal(snapshot.rolling.baselineCredits,69);assert.equal(snapshot.rolling.assistedCredits,60.5);
  assert.equal(snapshot.rolling.toRecordedAt,2000);assert.equal(snapshot.runs[0].id,first.withPicard.id);
  assert.equal(snapshot.runs[0].comparison.assisted.workflow.followUpCount,1);
+});
+
+test('rolling totals stay unavailable when individually finite audited totals overflow in combination',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'picard-audited-window-'));
+ const dbPath=join(directory,'relay.sqlite');
+ const store=createRelayStore({dbPath,now:()=>0});
+ const db=new DatabaseSync(dbPath);
+ t.after(async()=>{db.close();store.close();await rm(directory,{recursive:true,force:true});});
+ const usage=store.openCodexUsage('owner');
+ db.exec('CREATE TABLE relay_codex_cost_breakdowns(owner TEXT,comparison_id TEXT,record TEXT)');
+ const record=JSON.stringify({sides:{baseline:{fullCredits:1e308},assisted:{fullCredits:1e308}}});
+ for(const index of [1,2]){
+  const {baseline}=await fullPair(store,usage,index,20000,10000);
+  db.prepare('INSERT INTO relay_codex_cost_breakdowns VALUES(?,?,?)').run('owner',baseline.comparisonId,record);
+ }
+ const {comparisons,rolling}=usage.overview();
+ assert.deepEqual(comparisons.map(pair=>pair.creditSavingsPercent),[0,0]);
+ assert.equal(rolling.eligibleCount,2);
+ assert.equal(rolling.sampleCount,0);
+ for(const key of ['baselineCredits','assistedCredits','savedCredits','savedPercent'])assert.equal(rolling[key],null,key);
 });
 
 test('empty rolling history exposes unknown savings rather than zero',t=>{
@@ -228,9 +276,11 @@ test('comparison totals include linked turns on either side without rewriting us
  const measured=usage.list().find(row=>row.id===assisted.id);
  assert.equal(measured.totalTokens,8000);
  assert.equal(measured.baselineTokens,12000);
+ const unclassified={modelCredits:null,setupCredits:null,coordinationCredits:null,fullCredits:null,classificationComplete:false,
+  source:'Detailed classification unavailable; missing categories are not zero.'};
  assert.deepEqual(measured.comparison,{
-  id:'sample',baseline:{totalTokens:12350,inputTokens:10300,cachedInputTokens:8200,outputTokens:2050,standardCredits:null,freshTokens:4150,followUpTokens:350,followUpCount:1,lastRecordedAt:3000},
-  assisted:{totalTokens:8800,inputTokens:8200,cachedInputTokens:5900,outputTokens:600,standardCredits:null,freshTokens:2900,followUpTokens:800,followUpCount:2,lastRecordedAt:4000}
+  id:'sample',savingsEligible:false,creditSavingsPercent:null,baseline:{totalTokens:12350,inputTokens:10300,cachedInputTokens:8200,outputTokens:2050,standardCredits:null,freshTokens:4150,followUpTokens:350,followUpCount:1,lastRecordedAt:3000,costs:unclassified},
+  assisted:{totalTokens:8800,inputTokens:8200,cachedInputTokens:5900,outputTokens:600,standardCredits:null,freshTokens:2900,followUpTokens:800,followUpCount:2,lastRecordedAt:4000,costs:unclassified}
  });
 });
 
@@ -328,6 +378,11 @@ test('native writes require the dedicated token and only the console owner can r
  assert.equal((await push('Bearer '+token,{origin})).status,403);
  assert.equal((await push('Bearer '+token)).status,201);
  assert.equal((await push('Bearer '+token)).status,200);
+ const coverage={v:1,kind:'workflow',comparisonId:'http-large',variant:'assisted',preparationIds:Array.from({length:39},(_,i)=>createHash('sha256').update('http-prep'+i).digest('hex')),picardRefs:Array.from({length:2},(_,i)=>createHash('sha256').update('http-call'+i).digest('hex'))};
+ assert(Buffer.byteLength(JSON.stringify(coverage))<4096);
+ assert.equal((await push('Bearer '+token,{},coverage)).status,201);
+ assert.equal((await push('Bearer '+token,{},coverage)).status,200);
+ assert.equal((await push('Bearer '+token,{}, {...coverage,comparisonId:'too-large',padding:'x'.repeat(4096)})).status,413);
  const read=headers=>send('/status',{headers});
  assert.equal((await read({authorization:'Bearer '+token})).status,401);
  assert.equal((await read({})).status,401);
@@ -344,4 +399,31 @@ test('native writes require the dedicated token and only the console owner can r
  assert.equal((await push('Bearer '+token,{},link)).status,200);
  const updated=await read({cookie:'__Host-PicardSession='+session});
  assert.equal(updated.data.codexUsage.runs.find(row=>row.id===assisted.id).comparison.assisted.totalTokens,8040);
+});
+
+
+test('64 real preparation leaves persist and project once; bounds and immutable legacy scopes remain',async t=>{
+ const directory=await mkdtemp(join(tmpdir(),'picard-preparation-cap-')),dbPath=join(directory,'relay.sqlite');
+ let store=createRelayStore({dbPath}),usage=store.openCodexUsage('owner');
+ t.after(async()=>{store.close();await rm(directory,{recursive:true,force:true});});
+ const leaves=Array.from({length:65},(_,i)=>({...run,id:createHash('sha256').update('prep-'+i).digest('hex'),comparisonId:null,variant:null,
+  recordedAt:100+i,inputTokens:10,cachedInputTokens:0,outputTokens:2}));
+ for(const row of [run,assisted,...leaves])assert.equal(usage.record(row),'saved');
+ const scope=(variant,ids)=>({v:1,kind:'workflow',comparisonId:'sample',variant,preparationIds:ids,picardRefs:[]});
+ const baseline=scope('baseline',[leaves[0].id]),large=scope('assisted',leaves.slice(0,64).map(r=>r.id));
+ assert.equal(usage.record(baseline),'saved');
+ assert.equal(usage.record(scope('assisted',leaves.map(r=>r.id))),'invalid');
+ assert.equal(usage.record({...large,picardRefs:leaves.slice(0,21).map(r=>r.id)}),'invalid');
+ assert.equal(usage.record({...large,preparationIds:[...large.preparationIds.slice(0,63),leaves[0].id]}),'invalid');
+ assert.equal(usage.record(large),'saved');assert.equal(usage.record({...large,preparationIds:[...large.preparationIds].reverse()}),'duplicate');
+ assert.equal(usage.record(scope('baseline',large.preparationIds)),'conflict');
+ assert.equal(usage.record({...leaves[64],recordedAt:500,followUpTo:assisted.id}),'conflict');
+ assert.equal(usage.attach({id:leaves[64].id,followUpTo:assisted.id}),'conflict');
+ const projected=()=>usage.list().find(r=>r.id===assisted.id).comparison;
+ const before=projected();assert.equal(before.assisted.workflow.preparationCount,64);
+ assert.equal(before.assisted.workflow.preparationTokens,64*12);assert.equal(before.assisted.workflow.codexTokens,8000+64*12);
+ assert.equal(before.assisted.workflow.complete,true);assert.equal(before.baseline.workflow.preparationCount,1);
+ assert.equal(store.openCodexUsage('other').record(large),'saved');
+ store.close();store=createRelayStore({dbPath});usage=store.openCodexUsage('owner');
+ assert.deepEqual(projected(),before);assert.equal(usage.record(large),'duplicate');
 });

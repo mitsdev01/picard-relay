@@ -177,3 +177,7 @@ machine-clients.json
 
 # Picard LCARS companion temp MCP trees
 tools/picard-tui/.tmp/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="dark">
+<meta name="description" content="Enter Picard Relay. Set up your own AI workspace, then make this cockpit yours.">
+<title>Picard Relay · Your relay starts here</title>
+<link rel="canonical" href="https://bmartynowicz.github.io/picard-relay/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Picard Relay">
+<meta property="og:title" content="Picard Relay · Make this cockpit yours">
+<meta property="og:description" content="Your own AI workspace. Give it a task. Keep the answer. Set up your relay, then step into your own cockpit.">
+<meta property="og:url" content="https://bmartynowicz.github.io/picard-relay/">
+<meta property="og:image" content="https://bmartynowicz.github.io/picard-relay/social-preview.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1280">
+<meta property="og:image:height" content="640">
+<meta property="og:image:alt" content="Picard Relay’s gold cockpit, starfield and guided setup: Make this cockpit yours.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Picard Relay · Make this cockpit yours">
+<meta name="twitter:description" content="Your own AI workspace. Give it a task. Keep the answer.">
+<meta name="twitter:image" content="https://bmartynowicz.github.io/picard-relay/social-preview.png">
+<meta name="twitter:image:alt" content="Picard Relay’s gold cockpit, starfield and guided setup: Make this cockpit yours.">
+<link rel="icon" href="/mark.svg" type="image/svg+xml"><link rel="stylesheet" href="/console.css"><link rel="stylesheet" href="/landing.css"><script type="module" src="/landing.js"></script>
+</head>
+<body>
+<a class="skip" href="#welcome">Skip to setup</a>
+<main id="console-surface" class="console landing-console" data-cockpit="true" data-starfield="true" data-motion="on" data-landing="true" aria-label="Picard Relay setup cockpit">
+<!-- PICARD_SCENE -->
+<header class="sidebar">
+<div class="brand"><a class="logo-wrap" id="logo-wrap" href="#welcome" aria-label="Picard Relay, welcome" data-rank="ensign"><!-- PICARD_MARK --></a><div><p>Picard Relay</p><small class="landing-rank">YOUR RELAY STARTS HERE</small></div></div>
+<nav id="navigation" aria-label="Explore Picard">
+<button type="button" data-panel="overview" aria-controls="landing-panel" aria-expanded="false"><span class="nav-index" aria-hidden="true">01</span>Overview</button>
+<button type="button" data-panel="jobs" aria-controls="landing-panel" aria-expanded="false"><span class="nav-index" aria-hidden="true">02</span>Jobs</button>
+<button type="button" data-panel="requests" aria-controls="landing-panel" aria-expanded="false"><span class="nav-index" aria-hidden="true">03</span>Requests</button>
+<button type="button" data-panel="groq" aria-controls="landing-panel" aria-expanded="false"><span class="nav-index" aria-hidden="true">04</span>Groq</button>
+<button type="button" data-panel="system" aria-controls="landing-panel" aria-expanded="false"><span class="nav-index" aria-hidden="true">05</span>System</button>
+</nav>
+<div class="console-utilities"><button type="button" class="landing-guide" data-panel="guide" aria-controls="landing-panel" aria-expanded="false">Guides</button><button type="button" class="landing-connect" data-panel="connect" aria-controls="landing-panel" aria-expanded="false">Open my relay ↗</button></div>
+</header>
+<div class="workspace" id="cockpit-glass">
+<section class="landing-welcome" id="welcome" aria-labelledby="welcome-title">
+<p class="landing-eyebrow">A place for your next good idea.</p>
+<h1 id="welcome-title">Make this cockpit<br><em>yours.</em></h1>
+<p>Your own AI workspace. Give it a task.<br>Keep the answer.</p>
+<div class="landing-actions"><button type="button" class="request-primary" data-panel="setup" aria-controls="landing-panel" aria-expanded="false">Set up my relay →</button><button type="button" class="landing-text" data-panel="guide" aria-controls="landing-panel" aria-expanded="false">Try the workflow</button></div>
+</section>
+<section class="landing-panel" id="landing-panel" aria-labelledby="panel-title" hidden>
+<header class="landing-panel-head"><p class="landing-eyebrow" id="panel-kicker"></p><button type="button" class="landing-close" aria-label="Close panel">×</button></header>
+<h2 id="panel-title" tabindex="-1"></h2><div id="panel-content"></div>
+</section>
+<div class="cockpit-dash landing-dash">
+<svg class="folding-arc" aria-hidden="true" viewBox="0 0 1 1" preserveAspectRatio="none"><defs><linearGradient id="folding-arc-fill" x2="0%" y2="100%"><stop stop-color="#294254" stop-opacity=".83"/><stop offset="1" stop-color="#14212c" stop-opacity=".77"/></linearGradient></defs><path class="folding-arc-face" fill="url(#folding-arc-fill)"/><path class="folding-arc-edge"/><path class="folding-arc-track"/></svg>
+<div class="folding-glass"><div class="folding-side landing-display"><button type="button" id="stars-toggle" aria-pressed="true">Stars</button><button type="button" id="motion" aria-pressed="false">Pause motion</button></div><div class="folding-side landing-source"><button type="button" data-panel="badge" aria-controls="landing-panel" aria-expanded="false">Badge</button><a href="https://github.com/bmartynowicz/picard-relay" target="_blank" rel="noopener noreferrer">Open source ↗</a></div></div>
+<div class="hud-instruments" id="hud-instruments" aria-label="Your setup path">
+<button type="button" id="hud-ready" data-panel="setup" aria-controls="landing-panel" aria-expanded="false"><span>Your relay</span><strong>Awaiting setup</strong></button>
+<button type="button" class="landing-step" data-panel="setup" aria-controls="landing-panel" aria-expanded="false"><b class="hud-numeral">01</b><small>Server</small></button>
+<button type="button" class="landing-step" data-panel="claim" aria-controls="landing-panel" aria-expanded="false"><b class="hud-numeral">02</b><small>Password</small></button>
+<button type="button" class="landing-step" data-panel="groq" aria-controls="landing-panel" aria-expanded="false"><b class="hud-numeral">03</b><small>Groq</small></button>
+<button type="button" id="hud-next" data-panel="setup" class="request-primary" aria-controls="landing-panel" aria-expanded="false">Begin setup →</button>
+</div>
+</div>
+<p class="landing-preview-note">Local setup concept · no connected relay</p>
+</div>
+</main>
+<noscript><aside class="landing-noscript">Follow the <a href="https://github.com/bmartynowicz/picard-relay/blob/main/docs/SETUP.md">setup guide</a>, then open your relay's HTTPS address. Nothing is installed from this page.</aside></noscript>
+<template id="content-overview"><p>Picard sends the request you approve, saves the answer, and keeps it ready to reopen.</p><ol class="landing-list"><li><strong>Ask.</strong> Turn a rough note into a checklist or ask for a code proposal.</li><li><strong>Approve.</strong> Review the exact brief before one model call.</li><li><strong>Keep.</strong> Copy, export, and review your saved answer.</li></ol><p class="landing-muted">This is the cockpit you'll use. Your own jobs and results appear after setup.</p><button type="button" class="request-primary" data-panel="setup">Make it mine →</button></template>
+<template id="content-jobs"><p>Your work, from queued to saved.</p><div class="landing-example"><span class="landing-eyebrow">Example · not a live job</span><strong>Turn meeting notes into next actions</strong><span class="landing-example-state">Saved answer → Ready to review</span></div><p>Track current requests and reopen the answer without sending the request again.</p><button type="button" class="request-primary" data-panel="setup">Set up my relay →</button></template>
+<template id="content-requests"><p>Bring a task you actually need help with.</p><blockquote>Turn these rough notes into a short checklist. Keep the owners and due dates; flag anything missing.</blockquote><p>Add your notes, review the brief, and approve it yourself. Picard saves the answer for you.</p><p class="landing-muted">Code stays a proposal. Picard doesn't execute generated code.</p><button type="button" class="request-primary" data-panel="setup">Start with my own relay →</button></template>
+<template id="content-groq"><p>Connect a key from your own Groq Free project.</p><p>After Oracle starts your relay, enter the key on your relay’s private setup page. This website never asks for your key.</p><a class="landing-link" href="https://github.com/bmartynowicz/picard-relay/blob/main/docs/SETUP.md#1-have-these-ready" target="_blank" rel="noopener noreferrer">Free-project requirements ↗</a><p class="landing-muted">The current model is openai/gpt-oss-20b. One approved call, no automatic retries or paid fallback. Account limits still apply.</p></template>
+<template id="content-system"><p>Your relay runs on your machine. Its console shows health, whole-machine CPU, and installed version.</p><dl class="landing-specs"><div><dt>Host</dt><dd>Fresh Oracle Linux 9 or Ubuntu</dd></div><div><dt>Runtime</dt><dd>Node.js · no npm dependencies</dd></div><div><dt>Maintenance</dt><dd>Signed updates · Replace key</dd></div></dl><p class="landing-muted">Oracle launch creates a separate server. You approve the resources in Oracle; Free capacity and account limits still apply.</p><h3>Acknowledgements</h3><p>With thanks to Bill Ulrich and Jon Turwy for helping shape Picard Relay.</p><a class="landing-link" href="https://github.com/bmartynowicz/picard-relay/blob/main/docs/LIMITATIONS.md" target="_blank" rel="noopener noreferrer">Capabilities and limits ↗</a></template>
+<template id="content-setup"><p>Your own relay. From Oracle to your first request.</p><a class="request-primary launch-oracle" href="https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https%3A%2F%2Fgithub.com%2Fbmartynowicz%2Fpicard-relay%2Freleases%2Fdownload%2Foracle-launch-477969d63cec1b79%2Foracle-stack.zip" target="_blank" rel="noopener noreferrer">Create on Oracle ↗</a><ol class="launch-path"><li><span>01</span><div><strong>Create your server</strong><small>Sign in to Oracle and review the fixed Free-eligible plan.</small></div></li><li><span>02</span><div><strong>Make it yours</strong><small>Open Oracle’s private setup link. Create your password.</small></div></li><li><span>03</span><div><strong>Connect Groq</strong><small>Add your Free project key on your own relay.</small></div></li></ol><p class="landing-muted">Already have Oracle? Use your home region. New accounts need Oracle’s own sign-up first.</p><details class="launch-details"><summary>What gets created</summary><p>One new E2.1.Micro server, a 50 GB boot disk, and its own network. HTTPS only; SSH stays closed. Existing relays are left alone.</p><p>The plan stops if it cannot check your remaining Free allowance. No paid fallback. Don’t provision other resources while this runs.</p><p><a href="https://github.com/bmartynowicz/picard-relay/blob/main/docs/ORACLE-LAUNCH.md" target="_blank" rel="noopener noreferrer">Review the launch and limits ↗</a></p></details><button type="button" class="landing-text" data-panel="install">I already have a Linux server →</button><button type="button" class="landing-text" data-panel="connect">My relay is already running →</button></template>
+<template id="content-claim"><p>In Oracle, open your completed Apply job’s <strong>Application information</strong> tab.</p><p>Unlock <strong>Create your password</strong> and open that private link. Your new relay will ask you to create a password, then connect Groq.</p><p class="landing-muted">First boot can take a few minutes. The private link expires one hour after setup starts. Keep it to yourself.</p><button type="button" class="request-primary" data-panel="connect">My relay is already set up →</button></template>
+<template id="content-install"><p>In your Linux server's terminal:</p><pre class="landing-commands"><code>git clone https://github.com/bmartynowicz/picard-relay.git
+cd picard-relay
+sudo bash scripts/setup-linux.sh</code></pre><p>The guided installer asks for your hostname and Free-project details. Review its plan before installing.</p><p class="landing-muted">The key stays in your terminal. Setup makes no AI call.</p><a class="landing-link" href="https://github.com/bmartynowicz/picard-relay/blob/main/docs/SETUP.md#2-run-guided-setup" target="_blank" rel="noopener noreferrer">Full installation guide ↗</a><button type="button" class="request-primary" data-panel="connect">I have my relay address →</button></template>
+<template id="content-connect"><p>In Oracle, open the completed Apply job’s outputs and reveal <strong>Create your password</strong>. That private link opens your new relay. Already set up? Enter its address below.</p><form id="relay-connect" autocomplete="off"><label for="relay-address">Your relay address</label><input id="relay-address" name="relay-address" type="url" placeholder="https://your-relay.example" required spellcheck="false" autocapitalize="none" aria-describedby="relay-help relay-error"><p id="relay-help" class="landing-muted">You'll create your sign-in or enter your password on your own relay.</p><p id="relay-error" role="alert" hidden></p><button type="submit" class="request-primary">Enter my relay ↗</button></form><p class="landing-muted">Keep Oracle’s private setup link to yourself. Don’t paste it here; use only your relay’s plain HTTPS address.</p><a class="landing-link" href="https://github.com/bmartynowicz/picard-relay/blob/main/docs/SETUP.md#3-create-your-sign-in" target="_blank" rel="noopener noreferrer">First sign-in help ↗</a></template>
+<template id="content-guide">
+<div id="request-guide">
+<div class="guide-caption"><p class="landing-muted">Practice · no AI call</p><a class="guide-text-version" href="https://github.com/bmartynowicz/picard-relay/blob/main/docs/QUICKSTART.md" target="_blank" rel="noopener noreferrer">Text guide ↗</a></div>
+<ol class="guide-steps" aria-label="Request workflow"><li data-guide-step="1">01 Request</li><li data-guide-step="2">02 Review</li><li data-guide-step="3">03 Saved answer</li></ol>
+<p id="guide-announcement" class="guide-announcement" role="status" aria-live="polite"></p>
+<section class="guide-stage" data-guide-stage="request"><h3 tabindex="-1">Start with a useful task.</h3><blockquote data-example-request></blockquote><p>In your relay, write your task in Requests.</p><button type="button" class="request-primary" data-guide-action="next">Review this example →</button></section>
+<section class="guide-stage" data-guide-stage="review" hidden><h3 tabindex="-1">Read what will be sent.</h3><blockquote data-example-request></blockquote><p>A real request shows the model and limits before you approve it. This practice example uses no model.</p><div class="guide-actions"><button type="button" class="request-primary" data-guide-action="next">Show sample answer →</button><button type="button" data-guide-action="back">Back</button></div></section>
+<section class="guide-stage" data-guide-stage="answer" hidden><h3 tabindex="-1">Keep the answer.</h3><p class="landing-muted">Sample answer · not generated by AI</p><pre class="guide-answer" data-example-answer></pre><p>Your relay keeps a real answer so you can return to it.</p><button type="button" data-guide-action="back">Close answer</button></section>
+<section class="guide-stage" data-guide-stage="saved" hidden><h3 tabindex="-1">Your answer is still here.</h3><p>Open a completed job to read it again. Reopening a saved answer makes no new model call.</p><div class="guide-actions"><button type="button" class="request-primary" data-guide-action="reopen">Reopen saved answer →</button><button type="button" data-guide-action="reset">Start again</button></div></section>
+</div><p class="landing-muted">Ready for your own task?</p><button type="button" class="landing-text" data-panel="setup">Set up my relay →</button><button type="button" class="landing-text" data-panel="trial">Test the relay →</button>
+</template>
+<template id="content-trial">
+<section id="public-trial" class="guide-stage"><h3>One useful request.</h3><blockquote></blockquote><p class="landing-muted">Groq Free · 512 tokens · one call · public answer</p><details><summary>What is sent</summary><p>Public demonstration. Reply with three short numbered actions only. No tools, links or code execution.</p><p>Eight shared tests total. Refill is manual. No retries or paid fallback.</p></details><p role="status" aria-live="polite">Review the request, then check for a live slot.</p><pre class="guide-answer" hidden></pre><div class="guide-actions"><button type="button" class="request-primary" data-live-start>Check availability</button><button type="button" data-live-check hidden>Check saved result</button><button type="button" data-live-reset hidden>Review another test</button></div><button type="button" class="landing-text" data-panel="guide">Use the practice guide →</button></section>
+</template>
+<template id="content-badge"><p>Loading badge…</p></template>
+</body>
+</html>
