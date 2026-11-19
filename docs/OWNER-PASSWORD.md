@@ -1,7 +1,7 @@
 # Change the console password
 
-In the signed-in console, open Settings (the three-dot menu), then **Change
-password**. Enter the current password and a new password twice. Password
+In the signed-in console, open **System → Technical details**, then **Change
+password** beside **Pause motion**, below the release fingerprint. Enter the current password and a new password twice. Password
 managers can fill the current/new fields. Show passwords reveals them only in
 the current dialog. Cancel, closing the dialog, and signing out clear its inputs.
 After success, sign in again with the new password. All prior owner sessions

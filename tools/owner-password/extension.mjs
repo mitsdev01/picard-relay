@@ -30,7 +30,7 @@ export const dialog = `<dialog id="password-dialog" aria-labelledby="password-he
 <div class="password-actions"><button id="password-cancel" type="button">Cancel</button><button id="password-save" type="submit">Change password</button></div>
 </form></dialog>`;
 export const style = `
-.console-menu .password-action{display:flex;width:100%;padding:10px 12px;min-height:44px;text-align:left;border:0;color:var(--muted)}
+.system-account-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}.system-account-actions>button{margin:0;min-height:40px;padding:10px 20px;font-size:inherit;line-height:1.2}
 #password-dialog{color:var(--text,#eeefe9);background:var(--surface,#1b2225);border:1px solid var(--accent,#dec387);border-radius:18px;padding:24px;width:min(460px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto}
 #password-dialog::backdrop{background:#000b}#password-dialog h2{margin-top:0}#password-dialog label{display:block;margin-top:14px}#password-dialog input{display:block;width:100%;min-width:0;margin-top:5px;padding:10px;color:inherit;background:var(--bg,#101416);border:1px solid var(--line,#303b3f);border-radius:8px}#password-dialog p{font-size:14px}#password-dialog button{min-height:44px;padding:8px 12px}#password-dialog .password-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px}#password-message{min-height:1.5em;color:var(--accent,#dec387)}
 `;
@@ -82,7 +82,7 @@ export function applyPasswordExtension(source){
  const match=source.match(/const CONSOLE_SHELL_HTML=(".*");/);
  if(!match)throw Error('Console shell anchor changed');
  let html=JSON.parse(match[1]);
- html=replaceOnce(html,'<button class="logout" id="logout"','<button class="password-action" id="password-open" type="button" hidden>Change password</button><button class="logout" id="logout"');
+ html=replaceOnce(html,'<button id="system-motion" type="button" aria-pressed="false">Pause motion</button>','<div class="system-account-actions"><button id="system-motion" type="button" aria-pressed="false">Pause motion</button><button id="password-open" type="button" hidden>Change password</button></div>');
  html=replaceOnce(html,'</style>',style+'</style>');
  html=replaceOnce(html,'<script>',dialog+'<script>');
  html=replaceOnce(html,"window.addEventListener('pagehide',()=>{controller?.abort();","window.addEventListener('pagehide',()=>{for(const id of ['password-current','password-next','password-confirm'])$(id).value='';controller?.abort();");
