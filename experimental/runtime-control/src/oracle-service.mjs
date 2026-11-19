@@ -261,18 +261,33 @@ function codexUsageTokenHash(path){
 // Finite runtime ceiling; theme tests reserve separate upstream-growth headroom.
 export const MAX_CONSOLE_DOCUMENT_BYTES=288*1024;
 export const CONSOLE_MAX_BYTES=MAX_CONSOLE_DOCUMENT_BYTES;
+// Presentation hint from request headers. Bounded; never used for access decisions.
+// iPads in desktop mode report a Mac user agent and are not detected.
+export function consoleMobileDevice(headers={}){
+ const hint=headers['sec-ch-ua-mobile'],agent=headers['user-agent'];
+ if(hint==='?1')return true;
+ return typeof agent==='string'&&agent.length<=1024&&/Mobi|Android|iPhone|iPad|iPod|Tablet|Silk|Kindle/i.test(agent);
+}
 export function createConsoleHandler(options={}){
- const {enabled=false,html='',htmlThemes=null,getSnapshot,getRecentJobs,auth=null,origins=[],updates=createUpdateRequestBridge(),groqReplacement=null,recognition='',upstream=null,codexUsage=null,codexUsageKey=null}=options;
+ const {enabled=false,html='',htmlThemes=null,htmlMobile=null,getSnapshot,getRecentJobs,auth=null,origins=[],updates=createUpdateRequestBridge(),groqReplacement=null,recognition='',upstream=null,codexUsage=null,codexUsageKey=null}=options;
  // Presentation preference only: never a session or an authorization signal.
  if(htmlThemes!==null){
-  if(!htmlThemes||Object.keys(htmlThemes).sort().join(',')!=='admiral,captain')throw Error('console_themes_invalid');
-  const handlers=Object.fromEntries(Object.entries(htmlThemes).map(([name,document])=>[name,createConsoleHandler({...options,updates,html:document,htmlThemes:null})]));
-  const fallback=createConsoleHandler({...options,updates,htmlThemes:null});
+  const names=htmlThemes?Object.keys(htmlThemes).sort().join(','):'';
+  if(names!=='admiral,captain'&&names!=='admiral,captain,tricorder')throw Error('console_themes_invalid');
+  if(htmlMobile!==null&&(!htmlMobile||Object.keys(htmlMobile).join(',')!=='captain'))throw Error('console_themes_invalid');
+  const build=document=>createConsoleHandler({...options,updates,html:document,htmlThemes:null,htmlMobile:null});
+  const handlers=Object.fromEntries(Object.entries(htmlThemes).map(([name,document])=>[name,build(document)]));
+  const mobile=htmlMobile?build(htmlMobile.captain):null;
+  const fallback=build(html);
+  const fallbackIsCaptain=html===htmlThemes.captain;
   return (req,res)=>{
    const cookie=req.headers.cookie;
    const values=typeof cookie==='string'&&cookie.length<=4096?cookie.split(';').map(s=>s.trim()).filter(s=>s.startsWith('PicardAppearance=')):[];
    const name=values.length===1?values[0].slice('PicardAppearance='.length):'';
-   return (Object.hasOwn(handlers,name)?handlers[name]:fallback)(req,res);
+   const valid=Object.hasOwn(handlers,name);
+   // Engineering on a phone or tablet is shown as the tricorder. Layout only.
+   if(mobile&&(valid?name==='captain':fallbackIsCaptain)&&consoleMobileDevice(req.headers))return mobile(req,res);
+   return (valid?handlers[name]:fallback)(req,res);
   };
  }
 
@@ -1713,7 +1728,7 @@ export async function startOracleService(config,assistantAdapter,{intervalMs=100
  // Its console must use that same owner scope, not the legacy catalogue task.
  const consoleScope={ownerId:config.ownerId,allowedTaskId:config.admissionEnabled===true&&config.admissionReusableBoardEnabled===true?'':config.allowedTaskId??''};
  const recognition=config.consoleEnabled===true&&config.recognitionLogin?createContributionRecognition({login:config.recognitionLogin}):null;
- const consoleHandler=createConsoleHandler({enabled:config.consoleEnabled===true,html:admission?.html??CONSOLE_HTML,htmlThemes:admission?.htmlThemes??null,auth:consoleAuth,origins:config.consoleOrigins,recognition:recognition?.read??config.recognition,upstream:createUpstreamNotice(),updates:createUpdateRequestBridge({enabled:process.env.BRIDGE_OWNER_UPDATES_ENABLED==='true'}),groqReplacement:admission?.groqReplacement,codexUsage,codexUsageKey,getSnapshot:()=>consoleSnapshot(control.health(),store.scopedStats(consoleScope),new Date(),consoleScope.allowedTaskId?'task':'owner',readResources(),admission?.groqKeyExpiresAt),getRecentJobs:query=>store.recentJobs({...query,...consoleScope})});
+ const consoleHandler=createConsoleHandler({enabled:config.consoleEnabled===true,html:admission?.html??CONSOLE_HTML,htmlThemes:admission?.htmlThemes??null,htmlMobile:admission?.htmlMobile??null,auth:consoleAuth,origins:config.consoleOrigins,recognition:recognition?.read??config.recognition,upstream:createUpstreamNotice(),updates:createUpdateRequestBridge({enabled:process.env.BRIDGE_OWNER_UPDATES_ENABLED==='true'}),groqReplacement:admission?.groqReplacement,codexUsage,codexUsageKey,getSnapshot:()=>consoleSnapshot(control.health(),store.scopedStats(consoleScope),new Date(),consoleScope.allowedTaskId?'task':'owner',readResources(),admission?.groqKeyExpiresAt),getRecentJobs:query=>store.recentJobs({...query,...consoleScope})});
  const server=createServer(async(req,res)=>{try{
   // TLS/auth for the opt-in console terminate at the approved reverse proxy.
   if(admission&&await admission.handler(req,res))return;

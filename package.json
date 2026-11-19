@@ -26,7 +26,7 @@
     "preview:v1": "node examples/workspace-preview.mjs",
     "test:coding-connector": "node --test tools/coding-connector/test/connector.test.mjs tools/coding-connector/test/workspace.test.mjs experimental/runtime-control/test/machine-client.test.mjs",
     "test:picard-tui": "node --test tools/picard-tui/test/*.test.mjs",
-    "test:console-theme": "node --test tools/console-theme/captain.test.mjs && node --jitless --test tools/console-theme/captain.test.mjs",
+    "test:console-theme": "node --test tools/console-theme/captain.test.mjs tools/console-theme/tricorder.test.mjs && node --jitless --test tools/console-theme/captain.test.mjs tools/console-theme/tricorder.test.mjs",
     "preview:landing": "node examples/landing-preview.mjs",
     "build:landing": "node examples/landing/build-static.mjs",
     "test:landing": "node --test test/landing-static.test.mjs test/learning-guide.test.mjs test/public-test-client.test.mjs test/badge-interest-client.test.mjs",
