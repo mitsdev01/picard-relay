@@ -13,3 +13,19 @@ test('logout revokes session and clears cookie; origin protection mandatory',asy
 test('missing state/config fails closed without touching private snapshot',async()=>{assert.equal((await request('/auth/state',{adapter:null})).status,503);assert.equal((await request('/status',{adapter:null})).status,503);assert.equal((await request('/status',{enabled:false})).handled,false);});
 test('auth errors sanitized into explicit bounded classes',async()=>{for(const [code,status] of [['auth_failed',401],['setup_unavailable',409],['rate_limited',429],['PRIVATE_PATH_SECRET',503]]){const r=await request('/auth/login',{method:'POST',body:{password:'secret'},adapter:{...auth,login(){const e=Error('private detail');e.code=code;throw e;}}});assert.equal(r.status,status);assert.doesNotMatch(r.body,/PRIVATE|detail|secret/);}});
 test('no new method/path handles bridge commands or arbitrary auth actions',async()=>{for(const path of ['/bridge/v1','/auth/reset','/status?x=1','/status/'])assert.equal((await request(path)).handled,false);assert.equal((await request('/status',{method:'POST',body:{}})).handled,false);});
+
+test('password change requires same-origin owner cookie; bearer clients cannot change it',async()=>{
+ let calls=0;const adapter={...auth,changePassword:async(t,b)=>{calls++;assert.equal(t,token);assert.deepEqual(b,{currentPassword:'old password',newPassword:'new password'});}};
+ const body={currentPassword:'old password',newPassword:'new password'};
+ for(const headers of [{},{authorization:'Bearer '+token},{cookie:'__Host-PicardSession=bad'}])assert.equal((await request('/auth/password',{method:'POST',body,headers,adapter})).status,401);
+ for(const headers of [{origin:'https://evil.example'},{origin:undefined},{'sec-fetch-site':'cross-site'}])assert.equal((await request('/auth/password',{method:'POST',body,headers:{cookie:`__Host-PicardSession=${token}`,...headers},adapter})).status,403);
+ assert.equal(calls,0);
+ const result=await request('/auth/password',{method:'POST',body,headers:{cookie:`__Host-PicardSession=${token}`},adapter});assert.equal(result.status,200);assert.equal(calls,1);assert.match(result.headers['Set-Cookie'],/Max-Age=0/);assert.equal(result.body,'{"ok":true}');assert.equal(result.headers['Cache-Control'],'no-store, private');
+});
+test('password route rejects extra fields, oversized payloads and unsupported methods',async()=>{
+ const headers={cookie:`__Host-PicardSession=${token}`};let calls=0;const adapter={...auth,changePassword:async()=>{calls++;}};
+ for(const body of [{currentPassword:'old',newPassword:'next',extra:true},{password:'next'},[],null,'{bad'])assert.equal((await request('/auth/password',{method:'POST',body,headers,adapter})).status,400);
+ assert.equal((await request('/auth/password',{method:'POST',body:'x'.repeat(2049),headers,adapter})).status,413);
+ assert.equal((await request('/auth/password')).handled,false);assert.equal(calls,0);
+ const failed=await request('/auth/password',{method:'POST',body:{currentPassword:'old password',newPassword:'new password'},headers,adapter:{...auth,changePassword(){throw Error('private secret');}}});assert.equal(failed.status,503);assert.doesNotMatch(failed.body,/private|secret/);assert.equal(failed.headers['Set-Cookie'],undefined);
+});

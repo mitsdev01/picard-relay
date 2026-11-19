@@ -403,3 +403,8 @@ used a synthetic local fixture: Engineering desktop views and counter/inspector
 controls, System technical identities, Tricorder at 390 and 320 CSS pixels
 without horizontal overflow, and switching back to Admiral. No provider calls
 or live installation are part of these checks.
+
+Password maintenance is a separate, shared source customization: see
+[Change the console password](OWNER-PASSWORD.md). Reapply its exact-anchor
+recipe before rebuilding the theme after an upstream merge; qualification
+must cover authentication as well as presentation.
