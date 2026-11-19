@@ -49,3 +49,32 @@ Publish/install only through the existing signed and guarded release process.
 The bounded console document ceiling is 296 KiB (8 KiB above the previous
 288 KiB ceiling), with at least 1 KiB of tested headroom for both themes.
 Oversized documents remain rejected; the signed artifact file set is unchanged.
+
+## Password hash migration
+
+New enrollment and password changes use scrypt N=16384, r=8, p=5 (32 MiB
+allocation ceiling), an OWASP-listed configuration chosen to retain the small
+VM's memory budget. Only the exact legacy p=1 and current p=5 profiles are
+accepted; arbitrary stored cost parameters are rejected before hashing.
+A successful legacy sign-in generates a fresh salt and upgrades the hash in
+the same atomic write as the new session. Incorrect passwords never upgrade
+the hash. Existing passwords and active sessions remain usable.
+
+After migration, older releases that accept only p=1 cannot read upgraded auth
+state. Do not roll back to those releases or restore an old auth backup as a
+routine rollback: that can revive revoked credentials. Retain this compatibility
+reader in rollback candidates and use an explicit operator recovery plan.
+The source recipe is tools/owner-password/kdf.mjs; the normal password build
+applies it and stops on changed upstream anchors. Host benchmarking uses only
+synthetic input, never the real password or auth-state file.
+
+### Synthetic host benchmark (2026-11-19)
+
+On the enrolled .113 VM, three sequential hashes per profile measured
+p=1: 149/118/124 ms; p=5: 529/599/593 ms. The benchmark read no credentials
+and changed no configuration. Cumulative process peak RSS was approximately
+88 MiB after the legacy samples and 120 MiB after the stronger samples; these
+are whole-process peaks, not isolated KDF allocation measurements. A legacy
+sign-in performs both verification and upgrade once. Password changes perform
+two derivations. This small sample is not a concurrency or sustained-load test.
+Reference: https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html
