@@ -39,3 +39,56 @@ test('changing parent path to symlink after configuration cannot redirect state 
 
 test('logout does not report revocation on stale lock; session remains valid',async()=>{const f=await fixture();try{const session=await f.auth.setup({code:f.code,password:PASSWORD});await fs.mkdir(path.join(f.stateDir,'.auth-lock'),{mode:0o700});await assert.rejects(f.auth.logout(session.token),denied('auth_unavailable'));assert.equal(await f.auth.authenticate(session.token),true);await fs.rmdir(path.join(f.stateDir,'.auth-lock'));assert.equal(await f.auth.logout(session.token),true);assert.equal(await f.auth.authenticate(session.token),false);}finally{await f.cleanup();}});
 test('logout persistence failure propagates instead of claiming server revocation',async()=>{const f=await fixture();let watcher,changed=false;try{const session=await f.auth.setup({code:f.code,password:PASSWORD});watcher=watch(f.stateDir,(event,name)=>{if(name==='.auth-lock'&&!changed){changed=true;chmodSync(f.stateDir,0o500);}});await assert.rejects(f.auth.logout(session.token),denied('auth_unavailable'));watcher.close();watcher=null;assert.equal(changed,true);await fs.chmod(f.stateDir,0o700);assert.equal(await f.auth.authenticate(session.token),true);assert.notEqual((await f.read()).session,null);}finally{watcher?.close();await fs.chmod(f.stateDir,0o700);await f.cleanup();}});
+
+test('password change replaces hash, revokes session, preserves enrollment and survives restart',async()=>{
+ const f=await fixture();try{
+  const login=await f.auth.setup({code:f.code,password:PASSWORD}),before=await f.read();
+  assert.deepEqual(await f.auth.changePassword(login.token,{currentPassword:PASSWORD,newPassword:'New private fixture password 9!'}),{ok:true});
+  const after=await f.read();assert.equal(after.session,null);assert.equal(after.enrolledAt,before.enrolledAt);assert.notEqual(after.password.salt,before.password.salt);
+  assert.equal(await f.auth.authenticate(login.token),false);
+  await assert.rejects(f.auth.login({password:PASSWORD}),denied('auth_failed'));
+  const restarted=createOwnerAuth(f.options),next=await restarted.login({password:'New private fixture password 9!'});assert.equal(await restarted.authenticate(next.token),true);
+  assert.doesNotMatch(JSON.stringify(after),/New private|distinct fixture/);
+ }finally{await f.cleanup();}
+});
+test('password change rejects bearer-like, missing, stale sessions and wrong password without replacing credentials',async()=>{
+ const f=await fixture();try{
+  const login=await f.auth.setup({code:f.code,password:PASSWORD}),before=await f.read();
+  for(const token of [null,'','Bearer abc',randomBytes(32).toString('base64url')])await assert.rejects(f.auth.changePassword(token,{currentPassword:PASSWORD,newPassword:'replacement password'}),denied('auth_failed'));
+  await assert.rejects(f.auth.changePassword(login.token,{currentPassword:'wrong password',newPassword:'replacement password'}),denied('auth_failed'));
+  assert.deepEqual((await f.read()).password,before.password);assert.equal(await f.auth.authenticate(login.token),true);
+  f.advance(8*3600000);await assert.rejects(f.auth.changePassword(login.token,{currentPassword:PASSWORD,newPassword:'replacement password'}),denied('auth_failed'));
+  assert.deepEqual((await f.read()).password,before.password);
+ }finally{await f.cleanup();}
+});
+test('password change is rate limited and rejects malformed input',async()=>{
+ const f=await fixture();try{
+  const login=await f.auth.setup({code:f.code,password:PASSWORD}),before=await f.read();
+  for(const newPassword of ['short','x'.repeat(129),'\ud800abcdefgh',null])await assert.rejects(f.auth.changePassword(login.token,{currentPassword:PASSWORD,newPassword}),denied('auth_failed'));
+  await assert.rejects(f.auth.changePassword(login.token,{currentPassword:PASSWORD,newPassword:'valid password',extra:true}),denied('auth_failed'));
+  f.advance(60001);
+  for(let i=0;i<5;i++)await assert.rejects(f.auth.changePassword(login.token,{currentPassword:'wrong password',newPassword:'replacement password'}),denied('auth_failed'));
+  await assert.rejects(f.auth.changePassword(login.token,{currentPassword:PASSWORD,newPassword:'replacement password'}),denied('rate_limited'));
+  assert.deepEqual((await f.read()).password,before.password);
+ }finally{await f.cleanup();}
+});
+test('password change cannot reuse a session rotated by another login',async()=>{
+ const f=await fixture();try{const a=await f.auth.setup({code:f.code,password:PASSWORD});const b=await f.auth.login({password:PASSWORD});await assert.rejects(f.auth.changePassword(a.token,{currentPassword:PASSWORD,newPassword:'replacement password'}),denied('auth_failed'));assert.equal(await f.auth.authenticate(b.token),true);}finally{await f.cleanup();}
+});
+
+test('password persistence refusal before rename leaves the old password and session intact',async()=>{
+ const f=await fixture();let watcher,changed=false;try{
+  const session=await f.auth.setup({code:f.code,password:PASSWORD}),before=await f.read();
+  watcher=watch(f.stateDir,(event,name)=>{if(name==='.auth-lock'&&!changed){changed=true;chmodSync(f.stateDir,0o500);}});
+  await assert.rejects(f.auth.changePassword(session.token,{currentPassword:PASSWORD,newPassword:'replacement password'}),denied('auth_unavailable'));
+  watcher.close();watcher=null;assert.equal(changed,true);await fs.chmod(f.stateDir,0o700);
+  assert.deepEqual((await f.read()).password,before.password);assert.equal(await f.auth.authenticate(session.token),true);
+ }finally{watcher?.close();await fs.chmod(f.stateDir,0o700);await f.cleanup();}
+});
+test('only one concurrent password change can consume an owner session',async()=>{
+ const f=await fixture();try{
+  const session=await f.auth.setup({code:f.code,password:PASSWORD});
+  const results=await Promise.allSettled([f.auth,f.auth].map(auth=>auth.changePassword(session.token,{currentPassword:PASSWORD,newPassword:'replacement password'})));
+  assert.equal(results.filter(x=>x.status==='fulfilled').length,1);assert.equal(await f.auth.authenticate(session.token),false);
+ }finally{await f.cleanup();}
+});

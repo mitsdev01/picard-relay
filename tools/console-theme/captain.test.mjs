@@ -9,7 +9,7 @@ import {CAPTAIN_LOGIN_REVEAL,CAPTAIN_AUTH_CLOSE,CAPTAIN_CORE_CLOSE} from './capt
 const standard=workspaceConsoleHtml(CONSOLE_HTML),captain=workspaceConsoleHtml(CONSOLE_HTML,{theme:'captain'});
 test('generated theme is current and both documents fit the bounded security handler',()=>{
  execFileSync(process.execPath,['tools/console-theme/build.mjs','--check']);
- // Reviewed operations layout growth: retain at least 1 KiB below the 288 KiB ceiling.
+ // Password dialog growth: retain at least 1 KiB below the 296 KiB ceiling.
  for(const html of [standard,captain]){assert(Buffer.byteLength(html)<MAX_CONSOLE_DOCUMENT_BYTES-1024);assert.doesNotThrow(()=>createConsoleHandler({html}));}
  assert.doesNotThrow(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES)}));
  assert.throws(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES+1)}),/console_document_invalid/);
@@ -103,4 +103,12 @@ test('Captain preserves Admiral form, navigation and accessibility contracts',()
   return JSON.stringify([tag,attributes]);
  }).sort();
  assert.deepEqual(contracts(captain),contracts(standard));
+});
+
+test('owner password customization is present, idempotent and rejects upstream drift',async()=>{
+ const {readFileSync}=await import('node:fs');const {applyPasswordExtension}=await import('../owner-password/extension.mjs');
+ const source=readFileSync('experimental/runtime-control/src/oracle-service.mjs','utf8').replaceAll('\r\n','\n');
+ assert.equal(applyPasswordExtension(source),source);
+ assert.throws(()=>applyPasswordExtension(source.replace('  async login(input){','  async renamedLogin(input){')),/anchor changed/);
+ for(const html of [standard,captain]){assert.match(html,/id="password-dialog"/);assert.match(html,/autocomplete="current-password"/);assert.match(html,/id="password-open"[^>]*hidden/);}
 });
