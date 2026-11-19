@@ -12,6 +12,8 @@ export function captainConsoleHtml(html){
  replace("await status();}\n catch(error){showAuth(setup", "await status();"+CAPTAIN_LOGIN_REVEAL+"}\n catch(error){showAuth(setup");
  // Clear private state first; closing is visual and never delays revocation.
  replace('clearPrivate();clearInputs();authMode=mode;', 'clearPrivate();clearInputs();'+CAPTAIN_AUTH_CLOSE+'authMode=mode;');
+ // Navigation keys leave the warp core screen; registered first so it closes before the view changes.
+ replace(CAPTAIN_NAV_ANCHOR, ()=>CAPTAIN_CORE_CLOSE+CAPTAIN_NAV_ANCHOR);
  replace('<span id="refresh-label">','<svg class="captain-refresh-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 10a8 8 0 0 0-14-4L3 9m0-5v5h5M4 14a8 8 0 0 0 14 4l3-3m0 5v-5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="refresh-label">');
  const utilities=html.match(/<div class="console-utilities">[\s\S]*?<p class="sidebar-foot">MAKE IT SO\.<\/p>/)?.[0];
  if(!utilities)throw Error('captain_theme_contract_changed');
@@ -20,7 +22,7 @@ export function captainConsoleHtml(html){
  replace(rank,'<small class="captain-brand-subtitle">LCARS 47 · Engineering</small>');
  replace('<p>YOUR COMMISSION</p>','<p>YOUR COMMISSION</p>'+rank);
  replace('<div class="captain-sidebar-rank">','<div class="captain-access-panel"><p class="captain-access-label">OWNER ACCESS</p><h2>Command authorization required</h2><p>Sign in to take the conn.</p><div class="captain-access-trace" aria-hidden="true"><span></span><span></span><span></span></div><div class="captain-access-foot"><p>YOUR PRIVATE CONSOLE<small>Jobs · Requests · Relay status</small></p></div></div><div class="captain-sidebar-rank">');
- replace('<div class="workspace"','<header class="captain-topbar"><div class="captain-rail" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><span class="captain-breadcrumb">PICARD RELAY / <span>CONSOLE</span></span><span class="captain-condition" aria-hidden="true"><b></b></span>'+utilities.replace('<p class="sidebar-foot">MAKE IT SO.</p>','')+'</header><div class="workspace"');
+ replace('<div class="workspace"','<header class="captain-topbar"><div class="captain-rail" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><span class="captain-breadcrumb">PICARD RELAY / <span>CONSOLE</span></span><details class="captain-core"><summary class="captain-condition" title="Show warp core status" aria-label="Warp core status"><b aria-hidden="true"></b></summary></details>'+utilities.replace('<p class="sidebar-foot">MAKE IT SO.</p>','')+'</header><div class="workspace"');
  const cockpitButton=html.match(/<button id="cockpit-toggle"[\s\S]*?<\/button>/)?.[0];
  const glassControls=html.match(/<div class="folding-glass"[\s\S]*?<\/label><\/div><\/div><\/div>/)?.[0];
  if(!cockpitButton||!glassControls)throw Error('captain_theme_contract_changed');
@@ -43,7 +45,7 @@ export function captainConsoleHtml(html){
  const scene=html.match(/<div id="space-scene" class="space-scene"[\s\S]*?<\/svg><\/div>/)?.[0];
  if(!scene)throw Error('captain_theme_contract_changed');
  replace(scene,'');
- replace('<div class="workspace" id="cockpit-glass" tabindex="0" aria-label="Space view; arrow keys look around">','<div class="workspace" id="cockpit-glass" tabindex="0" aria-label="Space view; arrow keys look around"><div class="captain-window">'+captainSpaceScene()+'<div class="captain-doors" aria-hidden="true"><span></span><span></span></div>');
+ replace('<div class="workspace" id="cockpit-glass" tabindex="0" aria-label="Space view; arrow keys look around">','<div class="workspace" id="cockpit-glass" tabindex="0" aria-label="Space view; arrow keys look around"><div class="captain-window">'+captainSpaceScene()+'<div class="captain-doors" aria-hidden="true"><span></span><span></span></div><div class="core-screen"><div class="core-rail" aria-hidden="true"><span>Warp propulsion · core 01</span><i></i><i></i><i></i></div><div><p class="core-kicker">Warp core status · online</p><p class="core-cond">Condition: </p><dl class="core-readouts"><dt>Matter flow</dt><dd>Normal</dd><dt>Antimatter flow</dt><dd>Normal</dd><dt>M/A intermix ratio</dt><dd>1:1</dd><dt>Relay service</dt><dd class="core-health"></dd><dt>Relay cycle</dt><dd class="core-phase"></dd><dt>Plasma stream</dt><dd class="core-plasma"></dd><dt>Dilithium matrix</dt><dd>100.00%</dd><dt class="core-x">Phase inducer</dt><dd class="core-x">Fwd flow</dd><dt class="core-x">Injector status</dt><dd class="core-x">Nominal</dd><dt class="core-x">Containment field</dt><dd class="core-x">100.00%</dd><dt class="core-x">Coolant temp</dt><dd class="core-x">212 K</dd><dt class="core-x">Antimatter reserve</dt><dd class="core-x">87.40%</dd><dt class="core-x">Core frequency</dt><dd class="core-x">9.42 GHz</dd><dt>Warp field output</dt><dd>22 Cochrane</dd></dl><p class="core-hint">Select the warp core again to return.</p></div><div class="core-column" aria-hidden="true"><div class="core-tube"><i></i><i></i><i></i><i></i><i></i></div></div><div class="core-keys" aria-hidden="true"><span data-code="47-1701">Telemetry</span><span data-code="60-2008">Diagnostic</span><span data-code="73-2315">Intermix ctrl</span><span data-code="86-2622">Int core startup</span><span data-code="99-2929">Forcefield sys</span><span data-code="112-3236">Plasma vent</span><span data-code="125-3543">Emerg shutdown</span><span data-code="138-3850">Emerg core eject</span></div></div>');
  replace('<footer class="footer">','</div><footer class="footer">');
  replace('<option value="captain">Engineering</option>',TRICORDER_OPTION);
  // Shared rules for elements this compiler removes can never match here; drop them.
@@ -78,10 +80,12 @@ const REMOVED_CLASSES=['sidebar-foot','motto','hud-numbers','display-rail','disp
 
 export const CAPTAIN_LOGIN_REVEAL="if(authenticated){cockpitFlags|=1;hudExpanded=true;starClicks=0;syncCockpit();}";
 export const CAPTAIN_AUTH_CLOSE="cockpitFlags&=~1;hudExpanded=false;starClicks=0;syncCockpit();";
+const CAPTAIN_NAV_ANCHOR="for(const view of views)$('nav-'+view).addEventListener('click',e=>openDeckView(view,e.currentTarget));";
+export const CAPTAIN_CORE_CLOSE="for(const view of views)$('nav-'+view).addEventListener('click',()=>document.querySelector('.captain-core')?.removeAttribute('open'));";
 
 // Settings-menu icons, shared with the tricorder. Geometry simplified from Lucide
 // (ISC licence): log-out, pause, hat-glasses, workflow, file-text, external-link, rss,
-// users-collaboration, galaxy, rotate-ccw.
+// users-collaboration, galaxy, rotate-ccw, file-chart-line.
 // Decorative only; every control keeps its own text or aria-label as its name.
 // #motion rewrites its own text, so its icon sits beside it in a .menu-tool row.
 const icon=d=>'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+d+'"/></svg>';
@@ -96,6 +100,7 @@ export function menuIcons(html,error){
  replace('<button id="workspace-toggle"','<button class="tool" id="workspace-toggle"');
  replace('<button id="stars-toggle"','<button class="tool" id="stars-toggle"');
  replace('<button id="walkthrough-replay"','<button class="tool" id="walkthrough-replay"');
+ replace('<button id="windshield-restore" type="button" hidden>Show windshield readout</button>','<button class="tool" id="windshield-restore" type="button" hidden>'+icon('M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8l6 6v12a2 2 0 0 1-2 2zM14 2v6h6m-4 5-3.5 3.5-2-2L8 17')+'Windshield readout</button>');
  replace('<button id="stealth-mode"','<button class="tool" id="stealth-mode"');
  replace('<button id="stealth-auto-toggle"','<button class="tool" id="stealth-auto-toggle"');
  replace('class="documentation"','class="documentation tool"');
@@ -134,7 +139,7 @@ export const CAPTAIN_STYLE=String.raw`
 body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 .console.captain:not([data-stealth=true]){--o:#ff9966;--g:#ffcc66;--p:#ffaa90;--l:#cc99cc;--v:#9977aa;
  --b:#9999ff;--s:#99ccff;--t:#ddaa77;--r:#dd6688;--x:#e64a3c;
- --frame-a:#b8475f;--frame-b:#9b5f97;--body:system-ui,"Segoe UI",Roboto,sans-serif;--cond:#7fe0a8;--cond-text:"WARP CORE STABLE";
+ --frame-a:#b8475f;--frame-b:#9b5f97;--body:system-ui,"Segoe UI",Roboto,sans-serif;--cond:#7fe0a8;--cond-text:"WARP CORE STABLE";--core-cond:"NORMAL";
  --bg:#000;--side:#000;--surface:#0b0910;--line:#2a2233;--text:#ffe2c4;--muted:#b9a6b8;--accent:var(--g);--good:#7fe0a8;--warn:var(--g);
  --f:Antonio,"Bahnschrift","Arial Narrow","Roboto Condensed","Helvetica Neue",sans-serif;
  --rail:232px;--elbow:190px;
@@ -155,7 +160,7 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 }
 /* Buttons are LCARS pills. Low specificity keeps shared component rules in charge. */
 :where(.console.captain:not([data-stealth=true])) button{border:0;border-radius:999px;background:var(--p);color:#000;padding:7px 20px 5px;min-height:40px;font:500 16px/1.15 var(--f);font-stretch:condensed;text-transform:uppercase;letter-spacing:.07em;text-align:right;box-shadow:none}
-:where(.console.captain:not([data-stealth=true])) button:hover:not(:disabled):not(:where(.job-row,.logo-wrap,#windshield-work,#windshield-dismiss)){background:var(--g);color:#000;border-color:transparent}
+:where(.console.captain:not([data-stealth=true])) button:hover:not(:disabled):not(:where(.job-row,.logo-wrap,#windshield-work,#windshield-dismiss,.count-open)){background:var(--g);color:#000;border-color:transparent}
 .console.captain:not([data-stealth=true]){
  & button:focus-visible,& summary:focus-visible{outline:3px solid var(--s);outline-offset:3px}
  *:is(.view-actions,.request-tools,.request-actions,.result-tools,.update-actions) button+button{background:var(--b)}
@@ -241,6 +246,75 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 .captain-condition b{width:110px;height:20px;border:2px solid var(--cond);border-radius:10px;background:radial-gradient(#dff 15%,#4af 35%,#0000 65%) 50%/16px 100% no-repeat,linear-gradient(90deg,#aef,#0000 20% 80%,#aef) 50%/100% 100% no-repeat,repeating-linear-gradient(90deg,#27c 0 4px,#012 0 7px)}
 .captain[data-motion=on] .captain-condition b{animation:warp 1.6s ease-in infinite}
 @keyframes warp{to{background-size:40px 100%,0 100%,auto;box-shadow:0 0 10px #4af}}
+.captain-core{grid-row:2;grid-column:2;min-width:0}
+.captain-core>summary{list-style:none;cursor:pointer;padding:2px 4px;border-radius:12px}
+.captain-core>summary::-webkit-details-marker{display:none}
+.captain-core>summary:hover b,.captain-core[open]>summary b{box-shadow:0 0 12px #4af}
+.captain-core>summary:focus-visible{outline:2px solid var(--g);outline-offset:3px}
+.core-screen{display:none}
+.console.captain:not([data-stealth=true]):has(.captain-core[open]):not(:has(#auth:not([hidden]))){
+ .folding-shell{display:none}
+ .core-screen{display:grid}
+}
+.console.captain:not([data-stealth=true]){
+ .core-screen{position:relative;z-index:6;box-sizing:border-box;grid-template-columns:minmax(0,max-content) minmax(0,1fr) minmax(150px,210px);grid-template-rows:auto minmax(0,1fr);align-items:center;gap:24px 48px;min-height:100%;padding:24px 44px 24px 32px;background:#000;border-left:28px solid var(--b);border-top:12px solid var(--b);border-bottom:12px solid var(--b);border-radius:52px 0 0 52px;text-transform:uppercase}
+ &[data-cockpit=true] .core-screen{position:absolute;inset:16px 16px 152px;min-height:0;overflow:auto;box-shadow:0 0 0 5px #000}
+ .core-screen p{margin:0}
+ .core-rail{grid-column:1/-1;display:flex;gap:5px;height:22px}
+ .core-rail span{padding:2px 14px 0;border-radius:11px 0 0 11px;background:var(--o);color:#000;font-size:14px;line-height:20px;letter-spacing:.14em;white-space:nowrap}
+ .core-rail i{flex:1;background:var(--b)}
+ .core-rail i:nth-child(3){flex:0 0 56px;background:var(--g)}
+ .core-rail i:nth-child(4){flex:0 0 110px;border-radius:0 11px 11px 0;background:var(--l)}
+ .core-keys{display:flex;flex-direction:column;gap:5px;align-self:stretch}
+ .core-keys span{--c:var(--b);flex:1;display:flex;align-items:flex-end;justify-content:flex-end;min-height:34px;padding:4px 12px 3px;background:var(--c);color:#000;font-size:15px;letter-spacing:.06em;text-align:right}
+ .core-keys span:before{content:attr(data-code);margin-right:auto;align-self:flex-start;font-size:11px;opacity:.7}
+ .core-keys span:first-child{border-radius:20px 0 0 0}
+ .core-keys span:nth-child(2){--c:#ffe9c2}
+ .core-keys span:nth-child(3){--c:var(--l)}
+ .core-keys span:nth-child(4){--c:var(--o)}
+ .core-keys span:nth-child(5){--c:#ffe9c2}
+ .core-keys span:nth-child(6){--c:var(--t)}
+ .core-keys span:nth-child(7){--c:var(--b)}
+ .core-keys span:last-child{--c:var(--x);border-radius:0 0 0 20px}
+ .core-kicker{color:var(--o);font-size:clamp(20px,min(2.3vw,4.4vh,5cqh),52px);letter-spacing:.05em}
+ .core-cond{margin:2px 0 14px!important;color:#fff;font-size:clamp(28px,min(3.6vw,7vh,8cqh),92px);line-height:1}
+ .core-cond:after{content:var(--core-cond);color:var(--cond)}
+ .core-readouts{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 48px;margin:0;font-size:clamp(14px,min(1.3vw,2.6vh,3.1cqh),32px);line-height:1.3;letter-spacing:.04em}
+ .core-readouts dt{color:var(--g);font-size:inherit;letter-spacing:inherit}
+ .core-readouts dd{margin:0;color:var(--o);text-align:right}
+ .core-readouts .core-x{display:none}
+ .core-health:after{content:"NORMAL"}
+ &:has(#health-heading:not([data-tone=good])) .core-health:after{content:"DEGRADED"}
+ .core-phase:after{content:"STANDBY"}
+ &[data-route-phase=idle] .core-phase:after{content:"READY"}
+ &:is([data-route-phase=queued],[data-route-phase=claimed],[data-route-phase=invoking]) .core-phase:after{content:"ENGAGED"}
+ &:is([data-route-phase=failed],[data-route-phase=blocked],[data-route-phase=cancelled]) .core-phase:after{content:"STOPPED"}
+ &:is([data-route-phase=uncertain],[data-route-phase=unknown]) .core-phase:after{content:"UNVERIFIED"}
+ .core-plasma:after{content:"CONST"}
+ &[data-motion=off] .core-plasma:after{content:"HELD"}
+ .core-hint{margin-top:14px!important;color:var(--muted);font:clamp(14px,min(.8vw,1.7vh),18px) var(--body);text-transform:none}
+ .core-column{position:relative;display:flex;justify-content:center;justify-self:center;align-self:stretch;min-height:300px;padding:0 40px}
+ .core-column:before,.core-column:after{content:"";position:absolute;top:7%;bottom:7%;width:22px;border:5px solid var(--b);background:repeating-linear-gradient(180deg,var(--b) 0 2px,#0000 0 16px) 100% 0/9px 100% no-repeat}
+ .core-column:before{left:0;border-right:0;border-radius:18px 0 0 18px}
+ .core-column:after{right:0;border-left:0;border-radius:0 18px 18px 0;background-position:0 0}
+ .core-tube{display:grid;grid-template-rows:9% 1fr 13% 1fr 9%;width:156px}
+ .core-tube i{margin:0 18px;background:linear-gradient(90deg,#0000 47%,#000 0 53%,#0000 0),linear-gradient(#0000,#fffa 50%,#0000) 0 -70%/100% 34% no-repeat,linear-gradient(90deg,#0007,#0000 30% 70%,#0007),linear-gradient(var(--a) 70%,var(--d) 0) 0 0/100% 10px}
+ .core-tube i:nth-child(2){--a:#8cf;--d:#1d3a63}
+ .core-tube i:nth-child(4){--a:#f66;--d:#5a1616}
+ .core-tube :is(i:nth-child(1),i:nth-child(3),i:nth-child(5)){margin:0;background:repeating-linear-gradient(#0000 0 7px,#0006 0 9px),linear-gradient(90deg,#33363c,#9a9fa8 45%,#44474e)}
+ .core-tube i:nth-child(1){margin:0 9px;border-radius:44% 44% 6px 6px/70% 70% 6px 6px}
+ .core-tube i:nth-child(5){margin:0 9px;border-radius:6px 6px 44% 44%/6px 6px 70% 70%}
+ .core-tube i:nth-child(3){border-radius:12px}
+}
+.captain[data-motion=on] .core-tube i:nth-child(2){animation:core-flow 1.6s linear infinite}
+.captain[data-motion=on] .core-tube i:nth-child(4){animation:core-flow 1.6s linear infinite reverse}
+.captain[data-motion=on] .core-tube i:nth-child(3){animation:core-pulse 1.6s ease-in infinite}
+.captain[data-motion=on] .core-keys span:nth-child(2){animation:captain-blink 3.1s steps(1) infinite}
+@keyframes core-flow{from{background-position:0 0,0 -70%,0 0,0 0}to{background-position:0 0,0 170%,0 0,0 10px}}
+@keyframes core-pulse{80%{filter:brightness(1.7);box-shadow:0 0 26px #9cf}}
+@media(min-width:901px){.console.captain:not([data-stealth=true]){.core-screen{container-type:size;overflow:auto}&:not([data-cockpit=true]) .core-screen{height:100%;min-height:520px}}}
+@container (min-height:470px){.console.captain:not([data-stealth=true]) .core-readouts .core-x{display:block}}
+@media(max-width:900px){.console.captain:not([data-stealth=true]){.core-screen{gap:16px;padding:18px 12px 18px 16px;border-left-width:14px;border-top-width:8px;border-bottom-width:8px;border-radius:32px 0 0 32px}&[data-cockpit=true] .core-screen{inset:8px 8px 200px}.core-column{min-height:240px;padding:0 18px}.core-column:before,.core-column:after{width:14px;border-width:4px}.core-tube{width:88px}.core-tube i{margin:0 10px}.core-screen{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:none;align-content:start}.core-keys{grid-column:1/-1;flex-flow:row wrap}.core-keys span{flex:1 1 22%;min-height:40px;font-size:13px}.core-keys span:is(:first-child,:last-child){border-radius:0}.core-rail i:nth-child(4){flex-basis:40px}}}
 .console.captain:not([data-stealth=true]){
  &:has(#auth:not([hidden])) .captain-condition{display:none}
  .captain-topbar .console-utilities{grid-row:2;grid-column:3;display:flex;align-items:center;gap:6px;margin:0;padding:0 18px 0 0;background:none;border:0;box-shadow:none}
@@ -285,8 +359,8 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
  :where(.console-menu button:not(.tool)):hover{background:var(--g)}
  .appearance-choice{display:grid;gap:4px;margin-bottom:6px}
  :is(#console-tools,#private) select{min-height:34px;padding:3px 12px 1px;border:1px solid #99f6;border-radius:999px;background:#000;color:var(--b);font:14px var(--f);text-transform:uppercase;letter-spacing:.07em}
- #private :is(input:not([type=checkbox]):not([type=radio]),textarea){padding:10px 16px;border:1px solid #99f6;border-radius:22px;background:#000}
- #private :is(input,textarea):focus-visible{border-color:var(--g);outline-offset:3px}
+ :is(#private,#auth) :is(input:not([type=checkbox]):not([type=radio]),textarea){padding:10px 16px;border:1px solid #99f6;border-radius:22px;background:#000}
+ :is(#private,#auth) :is(input,textarea):focus-visible{border-color:var(--g);outline-offset:3px}
  /* Tips sit left of the panel, level with the hovered or focused row. */
  #motion{--tip:"Pause or resume animation"}
  #stealth-mode{--tip:"Switch to a plain console. Shortcut: Alt+Shift+S"}
@@ -296,6 +370,7 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
  #workspace-toggle{--tip:"Show the LCARS workspace"}
  #stars-toggle{--tip:"Show or hide the starfield"}
  #walkthrough-replay{--tip:"Replay the walkthrough"}
+ #windshield-restore{--tip:"Show the status readout on the windshield again"}
  #logout{--tip:"Sign out of this console"}
  .tool:is(:hover,:focus-visible):after{content:var(--tip);position:absolute;right:calc(100% + 26px);z-index:9;white-space:nowrap;padding:5px 12px 3px;border-radius:999px;background:var(--g);color:#000;font-size:12px;text-transform:none;pointer-events:none}
 }
@@ -599,14 +674,15 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 .console.captain:not([data-stealth=true]){
  &:has(#auth:not([hidden])) .captain-window{display:grid;align-items:center;justify-items:center;padding:clamp(20px,5vw,72px)}
  &[data-cockpit=true]:has(#auth:not([hidden])) .captain-window{overflow:auto}
- #auth{position:relative;z-index:7;width:100%;max-width:520px;margin:auto;padding:36px 36px 30px;background:#000e;border:0;border-left:32px solid var(--v);border-right:32px solid var(--v);border-top:10px solid var(--v);border-bottom:10px solid var(--v);border-radius:54px;box-shadow:0 0 0 6px #000,0 30px 80px #000;align-self:center}
- #auth:before{content:"SECURITY ACCESS · LEVEL 10";position:absolute;top:-17px;left:22px;padding:0 10px;background:#000;color:var(--l);font-size:16px;line-height:24px;letter-spacing:.17em}
- #auth h2{margin:4px 0 10px;font-size:clamp(30px,3vw,42px);line-height:1.05;color:var(--o)}
- #auth>p{margin-bottom:22px;font-size:15px;color:var(--muted)}
+ #auth{position:relative;z-index:7;width:100%;max-width:520px;margin:auto;padding:30px 30px 26px 26px;background:#000;border:0;border-left:16px solid var(--b);border-top:6px solid var(--b);border-bottom:6px solid var(--b);border-radius:28px 0 0 28px;box-shadow:0 0 0 6px #000,0 30px 80px #000;align-self:center}
+ #auth:before{content:"SECURITY ACCESS · LEVEL 10";position:absolute;top:-14px;right:20px;padding:0 8px;background:#000;color:var(--b);font-size:18px;line-height:22px;letter-spacing:.09em}
+ #auth h2{position:relative;margin:0 0 12px;padding-bottom:14px;font-size:clamp(28px,2.6vw,40px);line-height:1.05;color:var(--o)}
+ #auth h2:after{content:"";position:absolute;left:0;right:0;bottom:0;height:6px;border-radius:3px;background:linear-gradient(90deg,var(--o) 0 22%,#000 0 calc(22% + 5px),var(--v) 0 74%,#000 0 calc(74% + 5px),var(--b) 0)}
+ #auth>p{margin-bottom:18px;font:15px/1.4 var(--body);color:var(--muted)}
  #auth label{margin-top:16px;color:var(--l)}
- #auth input{min-height:50px}
- #auth .auth-submit{width:100%;min-height:54px;margin-top:24px;border-radius:27px;background:var(--o);font-size:21px;letter-spacing:.16em;text-align:center}
- #auth .auth-message{margin:18px 0 0;padding:10px 14px;border:0;border-left:10px solid var(--g);border-radius:12px 0 0 12px;color:var(--g);overflow-wrap:anywhere}
+ #auth input{min-height:46px}
+ #auth .auth-submit{width:100%;min-height:46px;margin-top:22px;border-radius:999px;background:var(--o);font-size:19px;letter-spacing:.14em;text-align:center}
+ #auth .auth-message{width:max-content;max-width:100%;margin:18px 0 0;padding:4px 14px 2px;border:1px solid;border-radius:999px;color:var(--g);font-size:15px;letter-spacing:.06em;overflow-wrap:anywhere}
  .captain-access-panel{display:none}
 }
 @media(min-width:901px){
@@ -616,10 +692,15 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
  }
 }
 .console.captain:not([data-stealth=true]){
- .captain-access-panel>*{margin:0;padding:8px 14px 6px;background:var(--p);color:#000;text-align:right;letter-spacing:.08em}
+ .captain-access-panel>*{position:relative;margin:0;padding:22px 14px 6px;background:var(--p);color:#000;text-align:right;letter-spacing:.08em}
+ .captain-access-panel>:not(.captain-access-trace):before{position:absolute;left:12px;top:7px;font:500 13px/1 var(--f);letter-spacing:.06em;opacity:.72}
+ .captain-access-label:before{content:"00-0010"}
+ .captain-access-panel h2:before{content:"00-1701"}
+ .captain-access-panel>p:nth-child(3):before{content:"00-2552"}
+ .captain-access-foot:before{content:"00-5096"}
  .captain-access-label{background:var(--x)!important;font-size:14px;letter-spacing:.18em!important}
- .captain-access-panel h2{padding:14px;background:var(--t);color:#000;font-size:23px;line-height:1.1}
- .captain-access-panel>p:nth-child(3){background:var(--v);font-size:15px}
+ .captain-access-panel h2{padding:26px 14px 8px;background:var(--t);color:#000;font-size:21px;line-height:1.1}
+ .captain-access-panel>p:nth-child(3){background:var(--b);font-size:15px}
  .captain-access-panel .captain-access-trace{flex:1;min-height:70px;display:flex;flex-direction:column;justify-content:center;gap:9px;background:#000;padding:10px 0}
 }
 .captain-access-trace span{height:9px;margin-left:auto;border-radius:5px;background:var(--b);width:44%}
@@ -641,16 +722,16 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 @keyframes lc-depart{0%{opacity:.3}}
 /* ---------- Alert conditions, mapped only from existing observed state. ---------- */
 .console.captain:not([data-stealth=true]){
- &:is([data-route-phase=unknown],[data-route-phase=uncertain]),&:has(#health-heading:not([data-tone=good])){--frame-a:var(--g);--cond:var(--g);--cond-text:"WARP CORE UNSTABLE"}
- &[data-route-phase=failed]{--frame-a:var(--x);--frame-b:var(--x);--cond:var(--x);--cond-text:"WARP CORE CRITICAL"}
+ &:is([data-route-phase=unknown],[data-route-phase=uncertain]),&:has(#health-heading:not([data-tone=good])){--frame-a:var(--g);--cond:var(--g);--cond-text:"WARP CORE UNSTABLE";--core-cond:"CAUTION"}
+ &[data-route-phase=failed]{--frame-a:var(--x);--frame-b:var(--x);--cond:var(--x);--cond-text:"WARP CORE CRITICAL";--core-cond:"CRITICAL"}
  &[data-motion=on][data-route-phase=failed] *:is(.brand,.captain-rail i:nth-child(1),.captain-rail i:nth-child(5),.captain-condition){animation:captain-alert 1.8s ease-in-out infinite}
- &:has(#auth:not([hidden])){--frame-a:var(--o);--frame-b:var(--v)}
+ &:has(#auth:not([hidden])){--frame-a:#b8475f;--frame-b:#9b5f97}
 }
 /* ---------- Stealth: Engineering steps aside for the plain Work Console. ----------
    Every LCARS rule above is scoped to :not([data-stealth=true]), so the shared
    Admiral stealth styles apply. Only Engineering's own extra markup is placed or hidden. */
 .console.captain[data-stealth=true]{
- *:is(.captain-rail,.captain-codes,.captain-condition,.captain-breadcrumb,.captain-brand-subtitle,.captain-sidebar-rank,.captain-access-panel,.captain-pips,.captain-eyebrow,.captain-intro,.captain-card-title,.captain-refresh-icon,.space-scene,.captain-doors,.cockpit-dash){display:none!important}
+ *:is(.captain-rail,.captain-codes,.captain-core,.core-screen,.captain-breadcrumb,.captain-brand-subtitle,.captain-sidebar-rank,.captain-access-panel,.captain-pips,.captain-eyebrow,.captain-intro,.captain-card-title,.captain-refresh-icon,.space-scene,.captain-doors,.cockpit-dash){display:none!important}
  .captain-window{display:contents}
  #heading-overview{font-size:0}
  #heading-overview:after{content:"Overview";font-size:32px}
@@ -667,7 +748,7 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 @media(prefers-reduced-motion:reduce){
  .console.captain:not([data-stealth=true]){
   *:is(.captain-doors,.captain-doors span,.route-stages span,nav button,.hud-instruments){transition:none!important}
-  *:is(.captain-warp,.captain-codes span,.route-stages span,.captain-access-trace span,.brand,.captain-rail i,.captain-condition){animation:none!important}
+  *:is(.captain-warp,.captain-codes span,.core-tube i,.core-keys span,.route-stages span,.captain-access-trace span,.brand,.captain-rail i,.captain-condition){animation:none!important}
  }
  .captain .captain-stars{animation:none!important;transform:none!important}
 }
@@ -733,7 +814,7 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
   .footer:before{right:58px}
   .footer:after{display:none}
   #auth:before{font-size:12px;letter-spacing:.1em;white-space:nowrap}
-  #auth{padding:28px 18px 22px;border-left-width:14px;border-right-width:14px;border-radius:34px}
+  #auth{padding:26px 16px 20px;border-left-width:12px;border-radius:24px 0 0 24px}
   &:has(#auth:not([hidden])) .captain-window{padding:20px 6px;align-items:start}
   .cockpit-dash .hud-instruments{justify-content:center;gap:8px 14px;padding:8px 12px;border-left-width:16px;border-right-width:16px;border-radius:30px}
   .hud-instruments .hud-numeral{font-size:32px}

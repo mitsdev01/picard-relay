@@ -204,6 +204,9 @@ suite still applies.
 - **Panels:** overview cards, cockpit reading panels, the settings menu and the
   sign-in card use bracket borders with cut-in titles. Counts are coloured
   readout tabs; rank progress is a segmented bar.
+- **Sign-in:** keeps the burgundy command frame while signed out. The card uses
+  the overview bracket, striped heading rule, outlined password field and pill
+  status; the left rail shows the access readouts as coded keys like the navigation.
 - **At-a-glance layout:** on screens at least 1101px wide, Overview is a
   one-screen dashboard: a compact header, Relay status beside Your progress,
   the five readouts, then Recent activity beside Savings. The activity list
@@ -234,6 +237,20 @@ suite still applies.
   non-good tone or an unknown/uncertain route phase shows WARP CORE UNSTABLE
   (yellow); a failed route phase shows WARP CORE CRITICAL (red, flashing). It restates visible status and is not a
   separate monitor.
+- **Warp core status screen:** the header warp core is a native disclosure
+  (`details`/`summary`). Opening it replaces the
+  inner frame with a status screen and an animated vertical core: blue matter and red
+  antimatter flow toward a pulsing chamber. Condition (NORMAL / CAUTION / CRITICAL),
+  Relay service, Relay cycle and Plasma stream (CONST, or HELD with motion paused)
+  follow existing state; the other readouts are fixed decoration. Select the core
+  again, or any navigation key, to return; a navigation key also opens its view.
+  That close is a third presentation-only script hook (`CAPTAIN_CORE_CLOSE`), registered
+  before the shared navigation listener and checked by the theme tests. Hidden while signed out and in Stealth; static with motion off.
+  A WARP PROPULSION rail and a column of LCARS keys (Telemetry … Emerg core eject)
+  frame the core; they are decorative blocks, not controls, and hidden from assistive
+  technology. On narrow windows the keys wrap into rows below. On desktop the text
+  scales to the panel height (a CSS container query); panels with at least 470px of content height add
+  six more decorative readouts (Phase inducer … Core frequency).
 - **Job readouts:** with motion on, a light chases along the Queued → Running
   → Completed tabs while Running is above zero, Queued/Running numerals pulse
   while non-zero, and Uncertain/Failed tabs blink while non-zero. When the shared
@@ -247,7 +264,8 @@ suite still applies.
   and the Jobs and Requests dropdowns, are outlined pills in the same blue type. The rows are Workspace and Stars (cockpit only),
   Pause motion, Stealth (its tip gives the Alt+Shift+S shortcut) with Auto as the
   right half of the same split row (its setting opens below it), Documentation (its tip says it opens a new tab),
-  Feedback, Replay walkthrough and Sign out (log-out icon). Hovering or keyboard-focusing a row shows a short tip to the left of
+  Windshield readout (file-chart-line icon; cockpit only, after the readout is dismissed, and its tip says it
+  brings the readout back), Feedback, Replay walkthrough and Sign out (log-out icon). Hovering or keyboard-focusing a row shows a short tip to the left of
   the panel. Icons are inline SVG marked `aria-hidden`; each control keeps its
   own text or `aria-label` as its name, and #motion's icon sits beside the
   button because the shared script rewrites that button's text. The tricorder
