@@ -1,4 +1,4 @@
-import {TRICORDER_OPTION} from './tricorder.mjs';
+import {TRICORDER_OPTION,filterCss} from './tricorder.mjs';
 // Source-only theme compiler. The generated function is bundled into the existing
 // signed admission-ui module; there is no runtime import or host-side injection.
 // Captain "LCARS 47": a flat Okuda-grammar presentation. Everything below is static
@@ -20,7 +20,7 @@ export function captainConsoleHtml(html){
  replace(rank,'<small class="captain-brand-subtitle">LCARS 47 · Engineering</small>');
  replace('<p>YOUR COMMISSION</p>','<p>YOUR COMMISSION</p>'+rank);
  replace('<div class="captain-sidebar-rank">','<div class="captain-access-panel"><p class="captain-access-label">OWNER ACCESS</p><h2>Command authorization required</h2><p>Sign in to take the conn.</p><div class="captain-access-trace" aria-hidden="true"><span></span><span></span><span></span></div><div class="captain-access-foot"><p>YOUR PRIVATE CONSOLE<small>Jobs · Requests · Relay status</small></p></div></div><div class="captain-sidebar-rank">');
- replace('<div class="workspace"','<header class="captain-topbar"><div class="captain-rail" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><span class="captain-breadcrumb">PICARD RELAY / <span>CONSOLE</span></span><span class="captain-condition" aria-hidden="true"></span>'+utilities.replace('<p class="sidebar-foot">MAKE IT SO.</p>','')+'</header><div class="workspace"');
+ replace('<div class="workspace"','<header class="captain-topbar"><div class="captain-rail" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><span class="captain-breadcrumb">PICARD RELAY / <span>CONSOLE</span></span><span class="captain-condition" aria-hidden="true"><b></b></span>'+utilities.replace('<p class="sidebar-foot">MAKE IT SO.</p>','')+'</header><div class="workspace"');
  const cockpitButton=html.match(/<button id="cockpit-toggle"[\s\S]*?<\/button>/)?.[0];
  const glassControls=html.match(/<div class="folding-glass"[\s\S]*?<\/label><\/div><\/div><\/div>/)?.[0];
  if(!cockpitButton||!glassControls)throw Error('captain_theme_contract_changed');
@@ -28,33 +28,85 @@ export function captainConsoleHtml(html){
  replace('<div id="refresh-control"',cockpitButton+'<div id="refresh-control"');
  replace(glassControls,'');
  replace('<div class="console-menu">','<div class="console-menu">'+glassControls);
+ html=menuIcons(html,'captain_theme_contract_changed');
  const action='<button id="training-action" type="button" disabled>Check progress</button>';
  replace(action,'');
- replace('<h1 id="heading-overview" tabindex="-1">Overview</h1></div></div>','<p class="captain-eyebrow">Relay operations</p><h1 id="heading-overview" tabindex="-1">You have the conn.</h1><p class="captain-intro">Your relay is standing by for its next assignment.</p></div>'+action+'</div>');
- replace('<div class="signal">','<div class="captain-status"><h2 class="captain-card-title">Relay status</h2><div class="signal">');
- replace('<p id="blocking"','<div class="captain-route" aria-label="Request path, not a connectivity indicator"><span>Coding client</span><i aria-hidden="true">→</i><strong>Picard Relay</strong><i aria-hidden="true">→</i><span>Groq</span></div></div><p id="blocking"');
+ // Overview signature line and title; the shared routing map becomes the main card.
+ const route=html.match(/<section class="route-map"[\s\S]*?<\/section>/)?.[0];
+ if(!route)throw Error('captain_theme_contract_changed');
+ replace(route,'');
+ replace('<h1 id="heading-overview" tabindex="-1">Overview</h1></div></div>','<p class="captain-eyebrow">You have the conn</p><h1 id="heading-overview" tabindex="-1">Relay operations</h1></div>'+action+'</div>');
+ replace('<div class="signal">','<div class="captain-status">'+route+'<div class="signal">');
+ replace('<p id="blocking"','</div><p id="blocking"');
  replace('<div class="section-title"><h2>Recent activity','<div class="captain-activity"><div class="section-title"><h2>Recent activity');
  replace('aria-label="Recent activity"></ul>','aria-label="Recent activity"></ul></div>');
- replace('<p id="route-status" hidden></p>','');
- replace('<div class="captain-route"','<p id="route-status" role="status" aria-live="polite"></p><div class="captain-route"');
  const scene=html.match(/<div id="space-scene" class="space-scene"[\s\S]*?<\/svg><\/div>/)?.[0];
  if(!scene)throw Error('captain_theme_contract_changed');
  replace(scene,'');
  replace('<div class="workspace" id="cockpit-glass" tabindex="0" aria-label="Space view; arrow keys look around">','<div class="workspace" id="cockpit-glass" tabindex="0" aria-label="Space view; arrow keys look around"><div class="captain-window">'+captainSpaceScene()+'<div class="captain-doors" aria-hidden="true"><span></span><span></span></div>');
  replace('<footer class="footer">','</div><footer class="footer">');
  replace('<option value="captain">Engineering</option>',TRICORDER_OPTION);
+ // Shared rules for elements this compiler removes can never match here; drop them.
+ // A class used inside :is()/:not()/:has() keeps its selector. Fail if one returns.
+ const markup=html.replace(/<style>[\s\S]*?<\/style>/g,'');
+ if(REMOVED_CLASSES.some(name=>markup.includes(name)))throw Error('captain_theme_contract_changed');
+ const removed=selector=>REMOVED_CLASSES.some(name=>new RegExp('\\.'+name+'(?![\\w-])').test(selector.replace(/\([^()]*(\([^()]*\)[^()]*)*\)/g,'')));
+ html=html.replace(/<style>([\s\S]*?)<\/style>/,(_,css)=>'<style>'+filterCss(css,selector=>!removed(selector))+'</style>');
  replace('</style>',CAPTAIN_STYLE+'\n</style>');
+ // These attributes only ever hold "true" or "false" (markup literals, or the shared
+ // script assigning String(boolean)), so [x^=t] matches exactly what [x=true] does,
+ // with the same specificity and fewer bytes. Stop if any other assignment appears.
+ for(const name of ['cockpit','stealth','starfield','hudExpanded'])if(markup.split('dataset.'+name+'=').length!==markup.split('dataset.'+name+'=String(').length)throw Error('captain_theme_contract_changed');
+ if(/data-(cockpit|stealth|starfield|hud-expanded)="(?!true"|false")|setAttribute\(['"]data-(cockpit|stealth|starfield|hud-expanded)/.test(markup))throw Error('captain_theme_contract_changed');
+ html=html.replace(/<style>([\s\S]*?)<\/style>/,(_,css)=>'<style>'+css.replace(/\[data-(cockpit|stealth|starfield|hud-expanded)="?true"?\]/g,'[data-$1^=t]')+'</style>');
  return compactStyles(html);
 }
 
 // Whitespace before ":" is kept as one space: in selectors such as
 // "[data-stealth=true] :is(...)" it is a descendant combinator, not padding.
 export function compactStyles(html){
- return html.replace(/<style>([\s\S]*?)<\/style>/g,(_,css)=>'<style>'+css.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\*[\s\S]*?\*\/|\s*([{};,])\s*|:\s+|\s+/g,(token,punctuation)=>token.startsWith('"')||token.startsWith("'")?token:token.startsWith('/*')?'':punctuation??(token[0]===':'?':':' '))+'</style>');
+ const keepStrings=(css,pattern,fn)=>css.replace(new RegExp(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|/.source+pattern.source,'g'),(token,...groups)=>token.startsWith('"')||token.startsWith("'")?token:fn(token,...groups));
+ const compact=css=>{
+  css=keepStrings(css,/\/\*[\s\S]*?\*\//,()=>'');
+  css=keepStrings(css,/\s*([{};,])\s*|:\s+|\s+/,(token,punctuation)=>punctuation??(token[0]===':'?':':' '));
+  return keepStrings(css,/;}/,()=>'}').trim();
+ };
+ return html.replace(/<style>([\s\S]*?)<\/style>/g,(_,css)=>'<style>'+compact(css)+'</style>');
 }
+
+const REMOVED_CLASSES=['sidebar-foot','motto','hud-numbers','display-rail','display-modes','display-effects','folding-glass-arc'];
 
 export const CAPTAIN_LOGIN_REVEAL="if(authenticated){cockpitFlags|=1;hudExpanded=true;starClicks=0;syncCockpit();}";
 export const CAPTAIN_AUTH_CLOSE="cockpitFlags&=~1;hudExpanded=false;starClicks=0;syncCockpit();";
+
+// Settings-menu icons, shared with the tricorder. Geometry simplified from Lucide
+// (ISC licence): log-out, pause, hat-glasses, workflow, file-text, external-link, rss,
+// users-collaboration, galaxy, rotate-ccw.
+// Decorative only; every control keeps its own text or aria-label as its name.
+// #motion rewrites its own text, so its icon sits beside it in a .menu-tool row.
+const icon=d=>'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="'+d+'"/></svg>';
+export function menuIcons(html,error){
+ const replace=(from,to)=>{if(html.split(from).length!==2)throw Error(error);html=html.replace(from,to);};
+ const motion=html.match(/<button id="motion"[^>]*>[^<]*<\/button>/)?.[0];
+ if(!motion)throw Error(error);
+ replace(motion,'<span class="menu-tool">'+motion.replace('<button ','<button class="tool" ')+icon('M5 3h5v18H5zm9 0h5v18h-5z')+'</span>');
+ replace('hidden>Workspace</button>','hidden>'+icon('M13 3a9 9 0 0 1 7.5 6.1M13 22a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2M3 12a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2M3.9 15.9a9 9 0 0 0 5.2 4.6M15 14a2 2 0 1 0 4 0 2 2 0 1 0-4 0M5 4a2 2 0 1 0 4 0 2 2 0 1 0-4 0')+'Workspace</button>');
+ replace('hidden>Stars</button>','hidden>'+icon('M16 15.1a5 6.5 28 0 0-8-6.2 5 6.5 28 0 0 8 6.2A11.9 7.3-61 0 1 4 7M17 21h.01M7 3h.01M8 8.9a11.9 7.3-61 0 1 12 8.1M12 12h.01')+'Stars</button>');
+ replace('hidden>Replay walkthrough</button>','hidden>'+icon('M3 12a9 9 0 1 0 9-9 9.8 9.8 0 0 0-6.7 2.7L3 8M3 3v5h5')+'Replay walkthrough</button>');
+ replace('<button id="workspace-toggle"','<button class="tool" id="workspace-toggle"');
+ replace('<button id="stars-toggle"','<button class="tool" id="stars-toggle"');
+ replace('<button id="walkthrough-replay"','<button class="tool" id="walkthrough-replay"');
+ replace('<button id="stealth-mode"','<button class="tool" id="stealth-mode"');
+ replace('<button id="stealth-auto-toggle"','<button class="tool" id="stealth-auto-toggle"');
+ replace('class="documentation"','class="documentation tool"');
+ replace('<button id="feedback-open"','<button class="tool" id="feedback-open"');
+ replace('<span id="stealth-label">',icon('M14 18a2 2 0 0 0-4 0m9-7-2-6.4a2 2 0 0 0-2.8-1.2L12 4H8.5a2 2 0 0 0-1.9 1.5L5 11M2 11h20M4 18a3 3 0 1 0 6 0 3 3 0 1 0-6 0m10 0a3 3 0 1 0 6 0 3 3 0 1 0-6 0')+'<span id="stealth-label">');
+ replace('<span aria-hidden="true">▸</span> Auto',icon('M3 3h8v8H3zm10 10h8v8h-8zM7 11v4a2 2 0 0 0 2 2h4')+'Auto');
+ replace('Documentation <span aria-hidden="true">↗</span>',icon('M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8l6 6v12a2 2 0 0 1-2 2zM14 2v6h6M10 9H8m8 4H8m8 4H8')+'Documentation');
+ replace('<button class="logout" id="logout" type="button" hidden>Sign out</button>','<button class="logout tool" id="logout" type="button" hidden>'+icon('M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4m7 14 5-5-5-5m5 5H9')+'Sign out</button>');
+ replace('hidden>Feedback</button>','hidden>'+icon('M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16M4 19a1 1 0 1 0 2 0 1 1 0 1 0-2 0')+'Feedback</button>');
+ return html;
+}
 
 // Deterministic decoration shared by the scenery and the readout block.
 export function lcg(seed){return()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};}
@@ -69,7 +121,9 @@ function captainCodes(){
 function captainSpaceScene(){
  const random=lcg(1701);
  const layers=[0,1,2].map(layer=>{
-  const points=Array.from({length:[86,40,32][layer]},()=>`M${(random()*1200).toFixed(0)} ${(random()*800).toFixed(0)}h.01`).join('');
+  // Stars sorted left to right as short relative moves; "h0" draws a round-capped dot.
+  let x=0,y=0;
+  const points=Array.from({length:[57,30,22][layer]},()=>[Math.round(random()*1200),Math.round(random()*800)]).sort((a,b)=>a[0]-b[0]).map(([px,py],i)=>{const step=i?`m${px-x}${py-y<0?'':' '}${py-y}h0`:`M${px} ${py}h0`;x=px;y=py;return step;}).join('');
   return `<svg ${layer<2?`id="space-plane-${layer}"`:""} class="captain-stars captain-stars-${layer}" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice"><path d="${points}" fill="none" stroke="${['#b1c5df','#e7f2ff','#fff3d8'][layer]}" stroke-width="${[.7,1.1,1.7][layer]}" stroke-linecap="round"/></svg>`;
  }).join('');
  return '<div id="space-scene" class="space-scene captain-observation" aria-hidden="true">'+layers+'<div class="captain-planet"></div><div class="captain-warp"></div><div class="captain-window-trim"><span>Main viewer · visual</span></div></div>';
@@ -77,15 +131,15 @@ function captainSpaceScene(){
 
 export const CAPTAIN_STYLE=String.raw`
 /* ---------- Tokens. Flat colour, condensed type, black field. ---------- */
+body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 .console.captain:not([data-stealth=true]){--o:#ff9966;--g:#ffcc66;--p:#ffaa90;--l:#cc99cc;--v:#9977aa;
  --b:#9999ff;--s:#99ccff;--t:#ddaa77;--r:#dd6688;--x:#e64a3c;
- --frame-a:var(--o);--frame-b:var(--v);--cond:#7fe0a8;--cond-text:"CONDITION GREEN";
+ --frame-a:#b8475f;--frame-b:#9b5f97;--body:system-ui,"Segoe UI",Roboto,sans-serif;--cond:#7fe0a8;--cond-text:"WARP CORE STABLE";
  --bg:#000;--side:#000;--surface:#0b0910;--line:#2a2233;--text:#ffe2c4;--muted:#b9a6b8;--accent:var(--g);--good:#7fe0a8;--warn:var(--g);
  --f:Antonio,"Bahnschrift","Arial Narrow","Roboto Condensed","Helvetica Neue",sans-serif;
  --rail:232px;--elbow:190px;
  width:100%;max-width:none;min-width:0;background:#000;color:var(--text);
  font-family:var(--f);font-stretch:condensed;font-size:16px}
-body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 .console.captain:not([data-stealth=true]){
  & h1,& h2,& h3{text-transform:uppercase;letter-spacing:.05em;font-weight:500}
  & h1{font-size:clamp(34px,3.3vw,58px);line-height:1;color:var(--o)}
@@ -95,7 +149,8 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
  & summary{color:var(--s);text-transform:uppercase;letter-spacing:.07em;cursor:pointer}
  & a{color:var(--s)}
  *:is(.muted,.subtle,.scope-note){color:var(--muted)}
- *:is(.request-output,.request-exact,.request-correction,.policy p,.info-panel,#codex-savings details p,.request-review-history){font-family:system-ui,"Segoe UI",sans-serif;font-stretch:normal}
+ *:is(.request-output,.request-exact,.request-correction,.info-panel,.request-review-history),#private :is(p,li,input,textarea,.job-ref,.job-time,.activity-ref,.detail-title,.metadata dd,.policy dd,.request-summary dd,.groq-lead dd):not(.captain-eyebrow,.route-stages li,.system-status,#detail-state){font-family:var(--body);font-stretch:normal;letter-spacing:normal;text-transform:none}
+ #private :is(.job-ref,.activity-ref,.detail-title,#route-status,.metadata dd,.groq-lead dd){font-size:15px}
  & pre:not(.logo){font-family:ui-monospace,Consolas,monospace}
 }
 /* Buttons are LCARS pills. Low specificity keeps shared component rules in charge. */
@@ -177,8 +232,15 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 .captain-codes span:nth-child(7n){color:var(--g)}
 .captain[data-motion=on] .captain-codes span:nth-child(3n+1){animation:captain-blink 3.1s steps(1) infinite}
 .captain[data-motion=on] .captain-codes span:nth-child(5n+3){animation:captain-blink 2.3s steps(1) -1.2s infinite}
-.captain-condition{grid-row:2;grid-column:2}
-.captain-condition:before{content:var(--cond-text);display:block;padding:5px 14px 3px;border-radius:999px;background:var(--cond);color:#000;font-size:14px;letter-spacing:.14em;white-space:nowrap}
+/* Warp core: plasma rings around a reaction chamber. The middle layer holds a
+   glow at each injector; shrinking it to the centre draws both pulses inward
+   while the chamber swells to meet them.
+   Casing and label carry the existing condition colour. */
+.captain-condition{grid-row:2;grid-column:2;display:flex;align-items:center;gap:10px}
+.captain-condition:after{content:var(--cond-text);color:var(--cond);font-size:14px;letter-spacing:.14em;white-space:nowrap}
+.captain-condition b{width:110px;height:20px;border:2px solid var(--cond);border-radius:10px;background:radial-gradient(#dff 15%,#4af 35%,#0000 65%) 50%/16px 100% no-repeat,linear-gradient(90deg,#aef,#0000 20% 80%,#aef) 50%/100% 100% no-repeat,repeating-linear-gradient(90deg,#27c 0 4px,#012 0 7px)}
+.captain[data-motion=on] .captain-condition b{animation:warp 1.6s ease-in infinite}
+@keyframes warp{to{background-size:40px 100%,0 100%,auto;box-shadow:0 0 10px #4af}}
 .console.captain:not([data-stealth=true]){
  &:has(#auth:not([hidden])) .captain-condition{display:none}
  .captain-topbar .console-utilities{grid-row:2;grid-column:3;display:flex;align-items:center;gap:6px;margin:0;padding:0 18px 0 0;background:none;border:0;box-shadow:none}
@@ -196,19 +258,46 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
  .console-tools summary:after{content:"";position:absolute;inset:-10px 0;}
  .console-tools summary:hover,.console-tools[open] summary{background:var(--g);color:#000}
 }
-/* Settings menu as a bracketed LCARS panel. */
+/* Settings menu as a bracketed LCARS panel: compact icon rows with hover tips. */
 .console.captain:not([data-stealth=true]){
- .console-menu{display:flex;flex-direction:column;align-items:stretch;gap:6px;min-width:250px;padding:14px 14px 12px;background:#000;border:0;border-left:18px solid var(--l);border-top:6px solid var(--l);border-bottom:6px solid var(--l);border-radius:30px 0 0 30px;box-shadow:0 16px 40px #000d}
- .console-menu .folding-glass{display:block;padding:0;background:none;border:0}
- .console-menu .folding-side{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 6px}
- .console-menu *:where(.folding-side button,.documentation,#feedback-open,#walkthrough-replay,#windshield-restore,#appearance-confirm button,#logout){display:inline-flex;align-items:center;justify-content:flex-end;gap:8px;width:auto;min-height:34px;margin:0;padding:5px 14px 3px;border:0;border-radius:999px;background:var(--b);color:#000;font-size:15px;text-decoration:none;text-transform:uppercase;letter-spacing:.07em}
- .console-menu *:where(.documentation,#feedback-open,#walkthrough-replay,#windshield-restore,#logout){width:100%}
- .console-menu .documentation{background:var(--s)}
- .console-menu #logout{background:var(--r)}
- .console-menu *:is(button,.documentation):hover{background:var(--g);color:#000}
- .console-menu [aria-pressed=true]{background:var(--g)}
- .console-menu kbd{font-size:11px;opacity:.7}
- .console-menu .appearance-choice{display:grid;gap:4px;margin-top:4px}
+ .console-menu{display:flex;flex-direction:column;align-items:stretch;gap:2px;min-width:250px;padding:10px 10px 12px;background:#000;border:0;border-left:18px solid var(--l);border-top:6px solid var(--l);border-bottom:6px solid var(--l);border-radius:30px 0 0 30px;box-shadow:0 16px 40px #000d}
+ .console-menu :is(.folding-glass,.folding-side,.auto-instrument){display:contents}
+ /* Stealth and its Auto setting share one split row; the setting opens below. */
+ .console-menu .folding-side+.folding-side{display:flex;flex-wrap:wrap;align-self:stretch;padding:0}
+ #stealth-mode{flex:1;width:auto;border-radius:999px 0 0 999px}
+ #stealth-auto-toggle{width:auto;gap:6px;border-left:1px solid #99f6;border-radius:0 999px 999px 0}
+ .menu-tool{display:flex;align-items:center}
+ .menu-tool svg{order:-1;margin:0 -26px 0 10px;position:relative;pointer-events:none}
+ #motion:disabled+svg{opacity:.55}
+ .console-menu svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--o)}
+ .console-menu .tool{display:flex;align-items:center;gap:10px;width:100%;min-height:30px;padding:3px 10px 1px;border-radius:999px;background:none;box-shadow:none;color:var(--b);font-size:14px;text-decoration:none;text-transform:uppercase;letter-spacing:.07em}
+ #motion{padding-left:36px}
+ /* Appearance first, then the tools; Sign out stays last. */
+ :is(.appearance-choice,#appearance-notice,#appearance-confirm){order:-1}
+ .tool:hover{background:var(--b);color:#000}
+ .console-menu :is(.menu-tool:hover svg,:hover>svg){color:#000}
+ .console-menu [aria-pressed=true]{color:var(--g)}
+ .console-menu kbd{display:none}
+ #stealth-settings{position:static;flex-basis:100%;display:grid;gap:4px;padding:2px 10px 6px 36px;color:var(--b);font-size:13px}
+ :where(.console-menu button:not(.tool)){display:flex;justify-content:flex-end;width:100%;min-height:30px;margin-top:4px;padding:4px 14px 2px;border-radius:999px;background:var(--b);color:#000;text-transform:uppercase;letter-spacing:.07em}
+ .console-menu #logout{margin-top:6px;background:none;color:var(--r)}
+ .console-menu #logout:hover{background:var(--r);color:#000}
+ :where(.console-menu button:not(.tool)):hover{background:var(--g)}
+ .appearance-choice{display:grid;gap:4px;margin-bottom:6px}
+ :is(#console-tools,#private) select{min-height:34px;padding:3px 12px 1px;border:1px solid #99f6;border-radius:999px;background:#000;color:var(--b);font:14px var(--f);text-transform:uppercase;letter-spacing:.07em}
+ #private :is(input:not([type=checkbox]):not([type=radio]),textarea){padding:10px 16px;border:1px solid #99f6;border-radius:22px;background:#000}
+ #private :is(input,textarea):focus-visible{border-color:var(--g);outline-offset:3px}
+ /* Tips sit left of the panel, level with the hovered or focused row. */
+ #motion{--tip:"Pause or resume animation"}
+ #stealth-mode{--tip:"Switch to a plain console. Shortcut: Alt+Shift+S"}
+ #stealth-auto-toggle{--tip:"Auto stealth: turn on when hidden or idle"}
+ .documentation{--tip:"Open the documentation in a new tab"}
+ #feedback-open{--tip:"Send feedback about Picard Relay"}
+ #workspace-toggle{--tip:"Show the LCARS workspace"}
+ #stars-toggle{--tip:"Show or hide the starfield"}
+ #walkthrough-replay{--tip:"Replay the walkthrough"}
+ #logout{--tip:"Sign out of this console"}
+ .tool:is(:hover,:focus-visible):after{content:var(--tip);position:absolute;right:calc(100% + 26px);z-index:9;white-space:nowrap;padding:5px 12px 3px;border-radius:999px;background:var(--g);color:#000;font-size:12px;text-transform:none;pointer-events:none}
 }
 /* Footer rail and the lower elbow fillet. */
 .console.captain:not([data-stealth=true]){
@@ -222,9 +311,8 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 /* ---------- Viewing window, scenery and the bridge doors. ---------- */
 .console.captain:not([data-stealth=true]){
  .workspace,&[data-cockpit=true] .workspace{position:relative;z-index:1;display:flex;flex-direction:column;width:auto;max-width:none;min-width:0;min-height:0;margin:0;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none}
-}
-.captain:not([data-stealth=true]) .captain-window{position:relative;isolation:isolate;flex:1;min-height:0;margin:12px 18px 6px 26px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--v) #000}
-.console.captain:not([data-stealth=true]){
+/* Window and panels share the Engineering scope, so later scoped rules win by order. */
+ .captain-window{position:relative;isolation:isolate;flex:1;min-height:0;margin:12px 18px 6px 26px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--v) #000}
  #private{position:relative;z-index:2;padding:0 6px 30px 0;background:#000;border:0;box-shadow:none}
  &:not([data-cockpit=true]) #private{min-height:100%}
  &[data-cockpit=true] .captain-window{overflow:hidden;background:#02040a;border-radius:30px}
@@ -305,8 +393,6 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
   *:is(.captain-eyebrow,.captain-intro,#training-action){display:none}
   .counts dd{font-size:32px}
   .readiness{grid-column:1/-1;grid-template-columns:repeat(4,minmax(0,1fr))}
-  .captain-route{grid-row:1}
-  .captain-route>*{letter-spacing:0}
  }
  .windshield-track{position:absolute;inset:0;z-index:5;pointer-events:none}
  #windshield-readout{background:#000d;border-left:14px solid var(--g);border-radius:22px 0 0 22px}
@@ -317,20 +403,23 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 }
 /* ---------- Panels: LCARS brackets with cut-in titles. ---------- */
 .console.captain:not([data-stealth=true]){
- #view-overview{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(300px,1fr);grid-template-rows:max-content max-content auto max-content minmax(170px,1fr);gap:18px 20px;height:100%}
+ #view-overview{display:grid;grid-template-columns:minmax(0,1.9fr) minmax(300px,1fr);grid-template-rows:max-content max-content auto max-content minmax(150px,1fr);gap:18px 20px;height:100%}
  #view-overview>.blocking{grid-row:3}
  #view-overview>.counts{grid-row:4}
+ &:not([data-cockpit=true]) #view-overview:has(#blocking[hidden]){grid-template-rows:max-content max-content 0 max-content minmax(150px,1fr);row-gap:9px}
+ &:not([data-cockpit=true]) #view-overview:has(#blocking[hidden])>*:is(.captain-status,#codex-savings,.captain-activity,.training){margin-top:9px}
  #view-overview>.captain-activity{grid-column:1;grid-row:5;display:flex;flex-direction:column;min-height:0}
- #view-overview>#codex-savings{grid-column:2;grid-row:5}
+ #view-overview>#codex-savings{grid-column:2;grid-row:2}
  .captain-activity .activity{flex:1;min-height:0;overflow:auto}
- &:not([data-cockpit=true]) .folding-shell{min-height:100%}
+ &:not([data-cockpit=true]) .folding-shell{position:relative;z-index:2;min-height:100%;background:#000}
  &:not([data-cockpit=true]) .folding-shell:has(#view-overview:not([hidden])){height:100%}
  &:not([data-cockpit=true]) #private:has(#view-overview:not([hidden])){height:100%;overflow:auto}
  .view-head h1{font-size:clamp(28px,2.6vw,44px)}
  #view-overview>*{grid-column:1/-1;margin:0}
  #view-overview>.view-head{grid-row:1}
+ :is(#view-jobs,#view-requests,#view-groq)>.view-head{margin-bottom:18px}
  #view-overview>.captain-status{grid-column:1;grid-row:2}
- #view-overview>.training{grid-column:2;grid-row:2}
+ #view-overview>.training{grid-column:2;grid-row:5}
  *:where(.captain-status,.training,.captain-activity,#codex-savings){--pc:var(--o)}
  *:is(.captain-status,.training,.captain-activity,#codex-savings){position:relative;margin:0;padding:18px 18px 12px 16px;background:#000;border:0;border-left:16px solid var(--pc);border-top:6px solid var(--pc);border-bottom:6px solid var(--pc);border-radius:28px 0 0 28px;box-shadow:none}
  .training{--pc:var(--l)}
@@ -355,21 +444,48 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
  .readiness{grid-column:1;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;margin:0}
  .captain-status .readiness>div{padding-left:10px;border-left:5px solid var(--v)}
  .readiness dd{margin-top:2px;font-size:15px;color:var(--text);text-transform:uppercase;letter-spacing:.04em}
- #route-status{grid-column:1/-1;margin-top:8px;font-size:13px;color:var(--muted)}
- &[data-route-phase=unknown] #route-status,&[data-route-phase=uncertain] #route-status{color:var(--warn)}
- .captain-route{grid-column:2;grid-row:1/3;align-self:center;justify-self:center;position:relative;display:grid;grid-template-columns:minmax(0,1fr) minmax(14px,.45fr) minmax(0,1.25fr) minmax(14px,.45fr) minmax(0,1fr);align-items:center;width:100%;max-width:440px;min-height:84px;margin:0}
- .captain-route>*:is(span,strong){display:grid;place-items:center;min-height:38px;padding:5px 8px 3px;border-radius:999px;background:var(--b);color:#000;font-size:12px;font-weight:500;line-height:1.05;letter-spacing:.08em;text-align:center;text-transform:uppercase;transition:background .3s,box-shadow .3s}
- .captain-route>strong{min-height:52px;background:var(--o);font-size:15px}
- .captain-route>span:last-child{background:var(--l)}
- .captain-route i{position:relative;height:6px;background:#3b2f46;font-size:0}
- .captain-route i:after{content:"";position:absolute;top:-3px;left:15%;width:12px;height:12px;border-radius:50%;background:var(--g)}
+ .captain-status{grid-template-columns:max-content minmax(0,1fr);gap:10px 22px;align-items:center}
+ .captain-status .signal{flex-direction:column;align-items:flex-start;gap:4px;padding:0}
+ .captain-status .readiness{grid-column:2;grid-template-columns:repeat(4,minmax(0,1fr))}
+ .route-map{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 16px;margin:0;padding:0;border:0}
+ .route-head{display:block}
+ .route-head h2{position:absolute;top:-14px;right:20px;margin:0;padding:0 8px;background:#000;color:var(--pc);font-size:18px;line-height:22px;letter-spacing:.09em}
+ #route-status{margin:0;color:var(--text)}
+ &[data-route-phase=idle] #route-status{display:none}
+ &:is([data-route-phase=unknown],[data-route-phase=uncertain]) #route-status{color:var(--g)}
+ &:is([data-route-phase=failed],[data-route-phase=blocked],[data-route-phase=cancelled]) #route-status{color:var(--r)}
+ #route-open{grid-area:1/2;min-height:34px;padding:5px 16px 3px;background:var(--o)}
+ .route-stages{grid-column:1/-1;position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:0 12px;margin:6px 0 0;padding:0 0 24px;list-style:none}
+ .route-stages:before{content:"";position:absolute;left:10%;right:10%;top:22px;height:4px;background:#3b2f46}
+ .route-stages:after{content:"";position:absolute;left:10%;right:10%;bottom:6px;height:16px;border:3px solid var(--l);border-top:0;border-radius:0 0 14px 14px;opacity:.55}
+ .route-stages li{position:relative;display:grid;justify-items:center;align-content:start;gap:6px;min-width:0;padding:0;border:0;text-align:center;font:13px/1.3 var(--body);color:var(--muted)}
+ .route-stages span{display:grid;place-items:center;width:100%;min-height:42px;padding:5px 6px 3px;border-radius:999px;background:var(--c,var(--b));color:#000;font:500 15px/1.05 var(--f);font-stretch:condensed;letter-spacing:.07em;text-transform:uppercase;transition:opacity .3s,box-shadow .3s}
+ [data-stage=approval]{--c:var(--s)}
+ [data-stage=relay]{--c:var(--o)}
+ [data-stage=provider]{--c:var(--l)}
+ [data-stage=review]{--c:var(--g)}
+ .route-stages:has([aria-current]) li:not([aria-current]) span{opacity:.4}
+ .route-stages [aria-current] span{box-shadow:0 0 0 3px #000,0 0 0 6px var(--text)}
+ .route-stages [aria-current] small{color:var(--text)}
+ &:is([data-route-phase=failed],[data-route-phase=blocked],[data-route-phase=cancelled]) .route-stages [aria-current] span{background:var(--r);box-shadow:0 0 0 3px #000,0 0 0 6px var(--r)}
+ &:is([data-route-phase=uncertain],[data-route-phase=unknown]) .route-stages [aria-current] span{background:repeating-linear-gradient(135deg,var(--g) 0 10px,#c79a3b 0 20px)}
+ &[data-motion=on]:is([data-route-phase=queued],[data-route-phase=claimed],[data-route-phase=invoking]) .route-stages [aria-current] span{animation:route-pulse 1.6s ease-in-out infinite}
 }
-.captain[data-route-phase=review] .captain-route>span:first-child,.captain:is([data-route-phase=queued],[data-route-phase=claimed]) .captain-route>strong,.captain[data-route-phase=invoking] .captain-route>span:last-child{background:var(--g);box-shadow:0 0 0 3px #000,0 0 0 6px var(--g)}
-.captain[data-route-phase=completed] .captain-route>strong{background:var(--good)}
-.captain[data-motion=on]:is([data-route-phase=queued],[data-route-phase=claimed],[data-route-phase=invoking]) .captain-route i:after{animation:route-flow 1.6s ease-in-out infinite}
-.captain:is([data-route-phase=unknown],[data-route-phase=uncertain],[data-route-phase=failed],[data-route-phase=blocked],[data-route-phase=cancelled]) .captain-route i:after{background:var(--muted)}
-.captain:is([data-route-phase=unknown],[data-route-phase=uncertain]) .captain-route>*{filter:saturate(.35) brightness(.75)}
-@keyframes route-flow{0%,100%{left:12%;opacity:.4}60%{left:82%;opacity:1}}
+@keyframes route-pulse{50%{box-shadow:0 0 0 3px #000,0 0 0 6px var(--g),0 0 22px var(--g)}}
+.console.captain:not([data-stealth=true]){
+ #codex-savings[data-savings=disconnected] #codex-savings-headline{color:var(--s)}
+ #codex-savings:is([data-savings=awaiting],[data-savings=unavailable]) #codex-savings-headline{color:var(--muted)}
+ .counts>div:has(dd[aria-label="0"]) dt{background:#2a2233;color:var(--muted)}
+ .counts dd[aria-label="0"]{color:#5d5068}
+ .counts>div:has(.count-open:not([hidden])):hover dt{filter:brightness(1.15)}
+ *:is(.job-state,.activity-state,#detail-state){--c:var(--v)}
+ *:is(.job-state,.activity-state,#detail-state):is([data-state=queued]){--c:var(--b)}
+ *:is(.job-state,.activity-state,#detail-state):is([data-state=claimed],[data-state=invoking]){--c:var(--s)}
+ *:is(.job-state,.activity-state,#detail-state):is([data-state=completed]){--c:var(--good)}
+ *:is(.job-state,.activity-state,#detail-state):is([data-state=uncertain],[data-state=unknown]){--c:var(--g)}
+ *:is(.job-state,.activity-state,#detail-state):is([data-state=failed],[data-state=blocked],[data-state=cancelled]){--c:var(--r)}
+ *:is(.job-state,.activity-state,#detail-state)[data-state]{justify-self:start;width:max-content;padding:3px 12px 1px;border-radius:999px;background:var(--c);color:#000;font:500 13px/1.3 var(--f);font-stretch:condensed;letter-spacing:.1em;text-transform:uppercase}
+}
 .console.captain:not([data-stealth=true]){
  .training-heading{display:block}
  .training-heading strong{display:block;margin:2px 0 6px;font-size:clamp(24px,2vw,34px);font-weight:500;line-height:1.1;letter-spacing:.06em;text-transform:uppercase;color:var(--g)}
@@ -450,6 +566,35 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
  .request-aside h2{font-size:18px}
  #system-motion{justify-self:start}
 }
+/* ---------- Operations views: list and inspector, form and summary, provider lead, system status. ---------- */
+.console.captain:not([data-stealth=true]){
+ .view-head>.view-actions{flex:0 0 auto}
+ .detail-identity{margin-top:18px;padding-top:12px;border-top:2px solid #1d1726}
+ .jobs-workspace{display:grid;grid-template-columns:minmax(0,65fr) minmax(300px,35fr);gap:22px;align-items:start}
+ .job-inspector{position:sticky;top:0}
+ .detail-title{margin:6px 0 10px;color:var(--text);font-size:18px;line-height:1.35}
+ .inspector-head h2{margin:0}
+ #inspector-close{min-height:30px;padding:4px 14px 2px;background:var(--b);font-size:13px}
+ #workspace-open-job,#job-open-result{margin-top:12px;background:var(--o)}
+ .request-grid{grid-template-columns:minmax(0,1fr) minmax(260px,330px);gap:40px}
+ .request-form .request-actions{position:sticky;bottom:0;z-index:2;margin:14px 0 0;padding:12px 0 8px;background:linear-gradient(#0000,#000 35%)}
+ .request-summary div{padding-left:10px;border-left:5px solid var(--v)}
+ .request-call-note{color:var(--g);font-size:14px}
+ .groq-lead{gap:12px 44px;margin:14px 0}
+ .groq-lead>div{padding-left:10px;border-left:5px solid var(--v)}
+ #groq-last[data-state=completed]{color:var(--good)}
+ #groq-last:is([data-state=uncertain],[data-state=unknown]){color:var(--g)}
+ #groq-last:is([data-state=failed],[data-state=blocked],[data-state=cancelled]){color:var(--r)}
+ #groq-last-open{min-height:34px;padding:5px 16px 3px;background:var(--b)}
+ .system-status{display:inline-block;margin:2px 0 12px;padding:3px 12px 1px;border-radius:999px;background:#2a2233;color:var(--text);font:500 14px/1.3 var(--f);letter-spacing:.08em;text-transform:uppercase}
+ .system-status[data-tone=good]{background:var(--good);color:#000}
+ .system-status[data-tone=warn]{background:var(--g);color:#000}
+ .system-status[data-tone=bad]{background:var(--r);color:#000}
+ .technical-details{grid-column:1/-1}
+ .technical-details h2{margin-top:16px;font-size:16px;color:var(--l)}
+}
+@media(max-width:1000px){.console.captain:not([data-stealth=true]){.jobs-workspace{grid-template-columns:minmax(0,1fr)}.job-inspector{position:static}}}
+@media(max-width:700px){.console.captain:not([data-stealth=true]) .job-inspector:has(#job-details:not([hidden])){position:fixed;background:#0b0910;padding:16px 18px;border:0;border-top:10px solid var(--l);border-radius:26px 26px 0 0}}
 /* ---------- Sign-in: the doors stay shut behind a security panel. ---------- */
 .console.captain:not([data-stealth=true]){
  &:has(#auth:not([hidden])) .captain-window{display:grid;align-items:center;justify-items:center;padding:clamp(20px,5vw,72px)}
@@ -496,8 +641,8 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 @keyframes lc-depart{0%{opacity:.3}}
 /* ---------- Alert conditions, mapped only from existing observed state. ---------- */
 .console.captain:not([data-stealth=true]){
- &:is([data-route-phase=unknown],[data-route-phase=uncertain]),&:has(#health-heading:not([data-tone=good])){--frame-a:var(--g);--cond:var(--g);--cond-text:"CONDITION YELLOW"}
- &[data-route-phase=failed]{--frame-a:var(--x);--frame-b:var(--x);--cond:var(--x);--cond-text:"RED ALERT"}
+ &:is([data-route-phase=unknown],[data-route-phase=uncertain]),&:has(#health-heading:not([data-tone=good])){--frame-a:var(--g);--cond:var(--g);--cond-text:"WARP CORE UNSTABLE"}
+ &[data-route-phase=failed]{--frame-a:var(--x);--frame-b:var(--x);--cond:var(--x);--cond-text:"WARP CORE CRITICAL"}
  &[data-motion=on][data-route-phase=failed] *:is(.brand,.captain-rail i:nth-child(1),.captain-rail i:nth-child(5),.captain-condition){animation:captain-alert 1.8s ease-in-out infinite}
  &:has(#auth:not([hidden])){--frame-a:var(--o);--frame-b:var(--v)}
 }
@@ -505,7 +650,7 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
    Every LCARS rule above is scoped to :not([data-stealth=true]), so the shared
    Admiral stealth styles apply. Only Engineering's own extra markup is placed or hidden. */
 .console.captain[data-stealth=true]{
- *:is(.captain-rail,.captain-codes,.captain-condition,.captain-breadcrumb,.captain-brand-subtitle,.captain-sidebar-rank,.captain-access-panel,.captain-pips,.captain-eyebrow,.captain-intro,.captain-route,#route-status,.captain-card-title,.captain-refresh-icon,.space-scene,.captain-doors,.cockpit-dash){display:none!important}
+ *:is(.captain-rail,.captain-codes,.captain-condition,.captain-breadcrumb,.captain-brand-subtitle,.captain-sidebar-rank,.captain-access-panel,.captain-pips,.captain-eyebrow,.captain-intro,.captain-card-title,.captain-refresh-icon,.space-scene,.captain-doors,.cockpit-dash){display:none!important}
  .captain-window{display:contents}
  #heading-overview{font-size:0}
  #heading-overview:after{content:"Overview";font-size:32px}
@@ -517,18 +662,18 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 @media(max-width:899px){.console.captain[data-stealth=true] .captain-topbar{padding:10px 16px 0}}
 /* ---------- Motion preferences. Doors keep their open/closed position. ---------- */
 .console.captain:not([data-stealth=true]){
- &[data-motion=off] *:is(.captain-doors,.captain-doors span,.captain-route>*,nav button){transition:none}
+ &[data-motion=off] *:is(.captain-doors,.captain-doors span,.route-stages span,nav button){transition:none}
 }
 @media(prefers-reduced-motion:reduce){
  .console.captain:not([data-stealth=true]){
-  *:is(.captain-doors,.captain-doors span,.captain-route>*,nav button,.hud-instruments){transition:none!important}
-  *:is(.captain-warp,.captain-codes span,.captain-route i:after,.captain-access-trace span,.brand,.captain-rail i,.captain-condition){animation:none!important}
+  *:is(.captain-doors,.captain-doors span,.route-stages span,nav button,.hud-instruments){transition:none!important}
+  *:is(.captain-warp,.captain-codes span,.route-stages span,.captain-access-trace span,.brand,.captain-rail i,.captain-condition){animation:none!important}
  }
  .captain .captain-stars{animation:none!important;transform:none!important}
 }
 /* ---------- Widths. ---------- */
-@media(min-width:901px) and (max-width:1390px){.console.captain:not([data-stealth=true]){#view-overview{grid-template-columns:minmax(0,1.6fr) minmax(250px,1fr)}.captain-status{grid-template-columns:minmax(0,1fr) minmax(0,.85fr);column-gap:14px}.captain-route>*:is(span,strong){font-size:11px;padding:4px 5px 2px}.captain-route>strong{font-size:13px}}}
-@media(min-width:901px) and (max-width:1200px){.console.captain:not([data-stealth=true]){.captain-status{grid-template-columns:minmax(0,1fr)}.captain-route{grid-column:1;grid-row:auto;min-height:80px;margin-top:10px}}}
+@media(min-width:901px) and (max-width:1390px){.console.captain:not([data-stealth=true]){#view-overview{grid-template-columns:minmax(0,1.6fr) minmax(250px,1fr)}.route-stages span{font-size:13px}}}
+@media(max-width:1600px){.console.captain:not([data-stealth=true]){.captain-status{grid-template-columns:minmax(0,1fr)}.captain-status .signal{flex-direction:row;align-items:center}.captain-status .readiness{grid-column:1}}}
 @media(max-width:1100px){.console.captain .captain-breadcrumb{font-size:0}.console.captain:not([data-stealth=true]){#view-overview{grid-template-rows:none;height:auto}#view-overview>*{grid-column:1/-1!important;grid-row:auto!important;contain:none!important}&:not([data-cockpit=true]) :is(#private:has(#view-overview:not([hidden])),.folding-shell:has(#view-overview:not([hidden]))){height:auto;overflow:visible}.captain-brand-subtitle{white-space:nowrap;font-size:10px;letter-spacing:.08em}#view-system{grid-template-columns:minmax(0,1fr)}#view-system>.upstream-notice{grid-column:1;grid-row:auto}}}
 @media(min-width:901px) and (max-width:1100px){
  .console.captain:not([data-stealth=true]){--rail:184px;--elbow:160px}
@@ -566,18 +711,19 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
   .captain-breadcrumb{padding-left:4px}
   .captain-breadcrumb>span:after{font-size:19px}
  }
- .captain-condition{grid-column:2}
- .captain-condition:before{font-size:12px;padding:4px 10px 2px}
+ .captain-condition{grid-column:2;gap:6px}
+ .captain-condition:after{font-size:12px;letter-spacing:.06em}
+ .captain-condition b{width:44px}
  .console.captain:not([data-stealth=true]){
   .captain-topbar .console-utilities{grid-row:3;grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap}
   .live-feed{display:none}
- }
- .captain:not([data-stealth=true]) .captain-window{height:calc(100dvh - 300px);min-height:360px;margin:6px 4px 4px}
- .console.captain:not([data-stealth=true]){
+  .captain-window{height:calc(100dvh - 300px);min-height:360px;margin:6px 4px 4px}
   #view-overview{grid-template-columns:minmax(0,1fr);gap:28px}
   #view-overview>*:is(.captain-status,.training){grid-column:1;grid-row:auto}
   .captain-status{grid-template-columns:minmax(0,1fr)}
-  .captain-route{grid-column:1;grid-row:auto;min-height:90px;margin-top:12px}
+  .captain-status .readiness{grid-column:1;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .route-stages{grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:10px;padding:0}
+  .route-stages:is(:before,:after){display:none}
   *:is(.captain-status,.training,.captain-activity,#codex-savings){padding:22px 14px 16px 14px;border-left-width:14px;border-radius:28px 0 0 28px}
   .counts{grid-template-columns:repeat(3,minmax(0,1fr))}
   .counts dd{font-size:44px}
@@ -602,8 +748,7 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 @media(max-width:520px){
  .console.captain:not([data-stealth=true]){
   .counts{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .captain-route>*:is(span,strong){font-size:11px;padding:4px 6px 2px}
-  .captain-route>strong{font-size:13px}
+  .route-stages span{font-size:13px;min-height:40px}
   & h1{font-size:32px}
  }
  .console.captain[data-cockpit=true] .folding-shell{bottom:236px}
