@@ -1,3 +1,4 @@
+import {applyKdfHardening} from './kdf.mjs';
 // Source-only customization. No extra module is shipped in the signed bundle.
 export const method = `  async changePassword(token,input){
    let current,next;
@@ -6,7 +7,7 @@ export const method = `  async changePassword(token,input){
     current=passwordBytes(input.currentPassword);next=passwordBytes(input.newPassword);
     return await locked(async(ctx,state,at)=>{
      requestCheck(matches(state,token,at));await attempt(ctx,state,at);
-     const proof=await scrypt(current,Buffer.from(state.password.salt,'base64url'),32,PARAMS);
+     const proof=await scrypt(current,Buffer.from(state.password.salt,'base64url'),32,storedParams(state.password));
      try{requestCheck(equal(proof.toString('base64url'),state.password.hash));}finally{proof.fill(0);}
      const salt=randomBytes(16),derived=await scrypt(next,salt,32,PARAMS);
      try{
@@ -72,6 +73,7 @@ function replaceOnce(source,before,after){
  return source.replace(before,after);
 }
 export function applyPasswordExtension(source){
+ source=applyKdfHardening(source);
  const original=source,installed=source.includes('  async changePassword(');
  source=replaceOnce(source,'export const MAX_CONSOLE_DOCUMENT_BYTES=288*1024;','export const MAX_CONSOLE_DOCUMENT_BYTES=296*1024;');
  source=replaceOnce(source,'  async login(input){',method+'  async login(input){');

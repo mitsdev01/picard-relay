@@ -9,7 +9,8 @@ const {randomBytes,createHash,timingSafeEqual,scrypt:cryptoScrypt}=ownerAuthCryp
 const {promisify}=ownerAuthUtil,fs=ownerAuthFs,constants=ownerAuthFsConstants,path=ownerAuthPath;
 const scrypt=promisify(cryptoScrypt);
 const HOUR=3600000, SESSION_MS=8*HOUR, WINDOW_MS=60000, MAX_ATTEMPTS=5, MAX_FILE=4096;
-const PARAMS=Object.freeze({N:16384,r:8,p:1,maxmem:32*1024*1024});
+const PARAMS=Object.freeze({N:16384,r:8,p:5,maxmem:32*1024*1024});
+function storedParams(password){return {...PARAMS,p:password.p};}
 const ERROR_CODES=new Set(['auth_failed','setup_unavailable','rate_limited','auth_unavailable']);
 const deny=(code='auth_unavailable')=>Object.assign(new Error(code),{code});
 const normalize=e=>ERROR_CODES.has(e?.code)?deny(e.code):deny();
@@ -31,7 +32,7 @@ function validate(state,at){
   const b=state.bootstrap;check(keys(b,['codeHash','createdAt','expiresAt'])&&hex(b.codeHash)&&integer(b.createdAt)&&integer(b.expiresAt)&&b.createdAt<=state.lastSeenAt&&b.expiresAt>b.createdAt&&b.expiresAt-b.createdAt<=HOUR);
  }else{
   check(integer(state.enrolledAt)&&state.enrolledAt<=state.lastSeenAt);
-  const p=state.password;check(keys(p,['algorithm','N','r','p','salt','hash'])&&p.algorithm==='scrypt'&&p.N===PARAMS.N&&p.r===PARAMS.r&&p.p===PARAMS.p&&encoded(p.salt,16)&&encoded(p.hash,32));
+  const p=state.password;check(keys(p,['algorithm','N','r','p','salt','hash'])&&p.algorithm==='scrypt'&&p.N===PARAMS.N&&p.r===PARAMS.r&&(p.p===1||p.p===PARAMS.p)&&encoded(p.salt,16)&&encoded(p.hash,32));
   if(state.session!==null){const s=state.session;check(keys(s,['hash','createdAt','expiresAt'])&&hex(s.hash)&&integer(s.createdAt)&&integer(s.expiresAt)&&s.createdAt>=state.enrolledAt&&s.createdAt<=state.lastSeenAt&&s.expiresAt-s.createdAt===SESSION_MS);}
  }
  return state;
@@ -97,7 +98,7 @@ function createOwnerAuth({stateDir,expectedUid=process.getuid?.(),now=Date.now}=
     current=passwordBytes(input.currentPassword);next=passwordBytes(input.newPassword);
     return await locked(async(ctx,state,at)=>{
      requestCheck(matches(state,token,at));await attempt(ctx,state,at);
-     const proof=await scrypt(current,Buffer.from(state.password.salt,'base64url'),32,PARAMS);
+     const proof=await scrypt(current,Buffer.from(state.password.salt,'base64url'),32,storedParams(state.password));
      try{requestCheck(equal(proof.toString('base64url'),state.password.hash));}finally{proof.fill(0);}
      const salt=randomBytes(16),derived=await scrypt(next,salt,32,PARAMS);
      try{
@@ -112,7 +113,11 @@ function createOwnerAuth({stateDir,expectedUid=process.getuid?.(),now=Date.now}=
    let bytes;try{requestCheck(keys(input,['password']));bytes=passwordBytes(input.password);}catch(e){if(bytes)bytes.fill(0);throw normalize(e);}
    try{return await locked(async(ctx,state,at)=>{
     if(state.phase!=='enrolled')throw deny('auth_failed');await attempt(ctx,state,at);
-    const derived=await scrypt(bytes,Buffer.from(state.password.salt,'base64url'),32,PARAMS);let valid;try{valid=equal(derived.toString('base64url'),state.password.hash);}finally{derived.fill(0);}requestCheck(valid);
+    const derived=await scrypt(bytes,Buffer.from(state.password.salt,'base64url'),32,storedParams(state.password));let valid;try{valid=equal(derived.toString('base64url'),state.password.hash);}finally{derived.fill(0);}requestCheck(valid);
+    if(state.password.p!==PARAMS.p){
+     const salt=randomBytes(16),upgraded=await scrypt(bytes,salt,32,PARAMS);
+     try{state.password={algorithm:'scrypt',N:PARAMS.N,r:PARAMS.r,p:PARAMS.p,salt:salt.toString('base64url'),hash:upgraded.toString('base64url')};}finally{upgraded.fill(0); }
+    }
     const completedAt=now();check(integer(completedAt)&&completedAt>=at);const result=session(state,completedAt);await persist(ctx,state,completedAt);return result;
    });}finally{bytes.fill(0);}
   },
