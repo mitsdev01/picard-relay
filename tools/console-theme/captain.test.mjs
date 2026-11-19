@@ -9,7 +9,7 @@ import {CAPTAIN_LOGIN_REVEAL,CAPTAIN_AUTH_CLOSE} from './captain.mjs';
 const standard=workspaceConsoleHtml(CONSOLE_HTML),captain=workspaceConsoleHtml(CONSOLE_HTML,{theme:'captain'});
 test('generated theme is current and both documents fit the bounded security handler',()=>{
  execFileSync(process.execPath,['tools/console-theme/build.mjs','--check']);
- // Reviewed upstream cockpit/tool-access growth: retain at least 1 KiB below the 288 KiB ceiling.
+ // Reviewed operations layout growth: retain at least 1 KiB below the 288 KiB ceiling.
  for(const html of [standard,captain]){assert(Buffer.byteLength(html)<MAX_CONSOLE_DOCUMENT_BYTES-1024);assert.doesNotThrow(()=>createConsoleHandler({html}));}
  assert.doesNotThrow(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES)}));
  assert.throws(()=>createConsoleHandler({html:'x'.repeat(MAX_CONSOLE_DOCUMENT_BYTES+1)}),/console_document_invalid/);
@@ -18,7 +18,7 @@ test('generated theme is current and both documents fit the bounded security han
 test('Captain theme preserves interactive IDs and application script except explicit authentication presentation hooks',()=>{
  const ids=h=>[...h.matchAll(/id="([^"]+)"/g)].map(x=>x[1]).sort();assert.deepEqual(ids(captain),ids(standard));
  const scripts=h=>[...h.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(x=>x[1]);assert.equal(captain.split(CAPTAIN_LOGIN_REVEAL).length,2);assert.equal(captain.split(CAPTAIN_AUTH_CLOSE).length,2);assert.deepEqual(scripts(captain.replace(CAPTAIN_LOGIN_REVEAL,'').replace(CAPTAIN_AUTH_CLOSE,'')),scripts(standard));
- assert.match(captain,/You have the conn\./);assert.match(captain,/captain-doors/);assert.doesNotMatch(standard,/class="console captain"/);
+ assert.match(captain,/You have the conn<\/p><h1 id="heading-overview" tabindex="-1">Relay operations<\/h1>/);assert.match(captain,/captain-doors/);assert.doesNotMatch(standard,/class="console captain"/);
 });
 test('admissionConsoleHtml forwards theme when the workspace view is enabled',()=>{
  const viaAdmission=admissionConsoleHtml(CONSOLE_HTML,{activationEnabled:true,workspaceEnabled:true,theme:'captain'});
@@ -35,8 +35,8 @@ test('Captain login and logout use shared cockpit state while retaining the star
  }
  assert(captain.includes('await status();'+CAPTAIN_LOGIN_REVEAL));
  assert(captain.includes('clearPrivate();clearInputs();'+CAPTAIN_AUTH_CLOSE+'authMode=mode;'));
- assert(captain.includes('[data-cockpit=true] .captain-doors'));
- assert(captain.includes('[data-starfield=true][data-motion=on] .captain-stars'));
+ assert(captain.includes('[data-cockpit^=t] .captain-doors'));
+ assert(captain.includes('[data-starfield^=t][data-motion=on] .captain-stars'));
  assert(!standard.includes(CAPTAIN_AUTH_CLOSE));
 });
 
@@ -58,7 +58,7 @@ test('Captain retains the laptop rail and relocates upstream cockpit controls wi
  const header=captain.slice(captain.indexOf('<header class="captain-topbar">'),captain.indexOf('</header>'));
  assert(header.includes('id="cockpit-toggle"'));
  assert(header.includes('class="folding-glass"'));
- assert(captain.includes('.console.captain[data-cockpit=true] .folding-shell{position:absolute;'));
+ assert(captain.includes('.console.captain[data-cockpit^=t] .folding-shell{position:absolute;'));
 });
 
 test('appearance cookie selects only prevalidated documents with their own CSP and shared authentication',async()=>{

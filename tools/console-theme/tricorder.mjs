@@ -2,7 +2,7 @@
 // the explicit "Engineering · Tricorder" appearance). Bundled into admission-ui.
 // Built from the Admiral document: same IDs, same script, no authentication hooks.
 // Every visual state keys off attributes the shared application already sets.
-import {lcg,compactStyles} from './captain.mjs';
+import {lcg,compactStyles,menuIcons} from './captain.mjs';
 
 export function tricorderConsoleHtml(html,{forced=false}={}){
  const replace=(from,to)=>{if(html.split(from).length!==2)throw Error('tricorder_theme_contract_changed');html=html.replace(from,to);};
@@ -16,6 +16,7 @@ export function tricorderConsoleHtml(html,{forced=false}={}){
  if(!glassControls)throw Error('tricorder_theme_contract_changed');
  replace(glassControls,'');
  replace('<div class="console-menu">','<div class="console-menu">'+glassControls);
+ html=menuIcons(html,'tricorder_theme_contract_changed');
  // The cockpit is a desktop scene. Its rules are removed so a saved cockpit
  // preference cannot change the hand-held layout.
  html=html.replace(/<style>([\s\S]*?)<\/style>/g,(_,css)=>'<style>'+filterCss(css,selector=>!/data-(cockpit|starfield)="?true|data-hud-expanded/.test(selector.replace(/:not\(\[data-(cockpit|starfield)="?true"?\]\)/g,'')))+'</style>');
@@ -27,7 +28,7 @@ export const TRICORDER_OPTION='<option value="captain">Engineering</option><opti
 
 // Drop selectors for which keep() is false; whole rules go when none remain.
 // @media/@supports are filtered recursively; other at-rules are kept verbatim.
-function filterCss(css,keep){
+export function filterCss(css,keep){
  css=css.replace(/\/\*[\s\S]*?\*\//g,'');
  const skipString=(s,j)=>{const q=s[j++];while(j<s.length&&s[j]!==q)j+=s[j]==='\\'?2:1;return j;};
  const next=(s,j)=>{for(let depth=0;j<s.length;j++){const c=s[j];if(c==='"'||c==="'")j=skipString(s,j);else if(c==='('||c==='[')depth++;else if(c===')'||c===']')depth--;else if(!depth&&(c==='{'||c===';'))return j;}return -1;};
@@ -54,7 +55,9 @@ function filterCss(css,keep){
 // Fixed at build time; never a reading of anything.
 function tricorderLid(){
  const random=lcg(4747);
- const codes=Array.from({length:6},()=>'<span>'+String(Math.floor(random()*10**(2+Math.floor(random()*3)))).padStart(2,'0')+'</span>').join('');
+ // Each code is a strip of eight fixed values with the same digit count; CSS steps
+ // through them at a different rate per code. Decoration, never a reading.
+ const codes=Array.from({length:6},()=>{const digits=2+Math.floor(random()*3);return '<span><b>'+Array.from({length:8},()=>String(Math.floor(random()*10**digits)).padStart(digits,'0')).join('<br>')+'</b></span>';}).join('');
  return '<div class="tri-lid" aria-hidden="true"><span class="tri-leds"><i></i><i></i><i></i><i></i><i></i></span><span class="tri-codes">'+codes+'</span><span class="tri-pips"></span></div>';
 }
 
@@ -97,6 +100,14 @@ body:has(.console.tricorder:not([data-stealth=true])){background:radial-gradient
  .tri-codes{flex:1;display:flex;justify-content:space-around;gap:6px;min-width:0;overflow:hidden;color:var(--s);font:500 11px/1 var(--f);letter-spacing:.08em;font-variant-numeric:tabular-nums}
  .tri-codes span:nth-child(3n+2){color:var(--r)}
  .tri-codes span:nth-child(4){color:var(--g)}
+ .tri-codes span{height:1em;overflow:hidden}
+ .tri-codes b{display:block;font-weight:inherit}
+ &[data-motion=on] .tri-codes b{animation:tri-roll 6.4s steps(8) infinite}
+ &[data-motion=on] .tri-codes span:nth-child(2) b{animation-duration:9.6s;animation-delay:-3s}
+ &[data-motion=on] .tri-codes span:nth-child(3) b{animation-duration:4.8s;animation-delay:-1.1s}
+ &[data-motion=on] .tri-codes span:nth-child(4) b{animation-duration:12s;animation-delay:-7s}
+ &[data-motion=on] .tri-codes span:nth-child(5) b{animation-duration:7.2s;animation-delay:-2.5s}
+ &[data-motion=on] .tri-codes span:nth-child(6) b{animation-duration:5.6s;animation-delay:-4.2s}
  .tri-pips:after{content:"";display:block;width:calc(var(--pip-count)*17px);height:15px;background:radial-gradient(circle 7px at 7px 7px,#fffbd4 0 12%,#f6df85 30%,#d4a743 55%,#97621b 75%,#ffe9a2 88%,#0000 100%) 0 0/17px 15px repeat-x}
  &:has(#logo-wrap[data-rank=admiral]) .tri-pips:after{content:"\2605";width:auto;background:none;color:#f2d27b;font-size:16px;line-height:15px}
  /* Main screen: the only part that scrolls. */
@@ -201,15 +212,34 @@ ${TRICORDER_VIEWS.map(([view,label])=>` &:has(#view-${view}:not([hidden])):has(#
  .console-tools summary::-webkit-details-marker{display:none}
  .console-menu{position:absolute;inset:auto 14px calc(max(10px,env(safe-area-inset-bottom)) + 186px);z-index:20;display:grid;gap:6px;width:auto;min-width:0;max-height:62%;overflow:auto;padding:12px;background:#0d0b09;border:0;border-left:10px solid var(--l);border-radius:22px 0 0 22px;box-shadow:0 0 0 2px #000,0 12px 30px #000d}
  .console-menu>*,.console-menu .folding-glass,.console-menu .folding-side{position:static;width:auto;margin:0;transform:none}
- .console-menu .folding-glass{display:grid;gap:6px;padding:0;background:none;border:0;box-shadow:none}
+ .console-menu .folding-glass{display:grid;grid-template-columns:1fr;gap:6px;padding:0;background:none;border:0;box-shadow:none}
  .console-menu .folding-side{display:contents}
  .console-menu :is(button,a){box-sizing:border-box;width:100%;display:flex;align-items:center;justify-content:space-between;min-height:44px;padding:4px 14px 2px;border:0;border-radius:22px;background:#1d1915;color:var(--text);font:500 14px/1.2 var(--f);letter-spacing:.08em;text-decoration:none;text-transform:uppercase}
- .console-menu #logout{background:var(--r);color:#000}
+ .console-menu #logout{color:var(--r)}
+ .console-menu .tool{justify-content:flex-start;gap:12px}
+ .console-menu #motion{padding-left:44px}
+ .console-menu .auto-instrument{display:contents}
+ .console-menu .folding-side+.folding-side{display:flex;flex-wrap:wrap;gap:2px}
+ .console-menu #stealth-mode{flex:1;width:auto;border-radius:22px 4px 4px 22px}
+ .console-menu #stealth-auto-toggle{width:auto;border-radius:4px 22px 22px 4px}
+ .console-menu #stealth-settings{position:static;flex-basis:100%;display:grid;gap:4px;padding:4px 14px}
+ .menu-tool{display:flex;align-items:center}
+ .menu-tool svg{order:-1;margin:0 -32px 0 14px;position:relative;pointer-events:none}
+ .console-menu kbd{display:none}
+ .console-menu svg{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;color:var(--o)}
  .console-menu select{min-height:44px}
+ /* Routing: one compact row of stages; the active one is outlined. */
+ .route-map{margin:0 0 14px;padding:0 0 12px}
+ .route-stages{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;margin:8px 0}
+ .route-stages li{padding:6px 2px;border-radius:10px;text-align:center}
+ .route-stages span{font:600 11px/1.15 var(--f);letter-spacing:.04em;text-transform:uppercase}
+ .route-stages small{display:none}
+ .console-menu :is(.appearance-choice,#appearance-notice,#appearance-confirm){order:-1}
  /* Speaker grille. */
  .sidebar-foot{grid-area:foot;display:grid;place-items:center;height:24px;margin:0;padding:0;border-radius:6px 6px 18px 18px;background:radial-gradient(circle,#000a 1.3px,#0000 1.6px) 0 0/7px 7px,linear-gradient(#2d2823,#1b1814);color:#857a6c;font:600 9px/1 var(--f);letter-spacing:.42em;text-shadow:0 1px #000}
 }
 @keyframes tri-scan{to{left:102%}}
+@keyframes tri-roll{to{transform:translateY(-100%)}}
 @keyframes tri-blink{0%,62%{opacity:1}63%,100%{opacity:.25}}
 @keyframes tri-pulse{50%{opacity:.45}}
 @keyframes tri-chase{0%,50%,100%{filter:none}20%{filter:brightness(1.5)}}

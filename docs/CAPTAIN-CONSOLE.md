@@ -54,10 +54,9 @@ the reviewed signed release, not through host-side injection. Merging source
 does not itself sign, publish or install a release.
 
 The generated document includes all inline styles, scripts and space scenery.
-Theme tests enforce a 224 KiB UTF-8 review budget; the handler has a separate
-256 KiB hard ceiling (`MAX_CONSOLE_DOCUMENT_BYTES`). This leaves at least 32 KiB
-between the build budget and runtime rejection, rather than letting styling
-consume the entire runtime allowance. Boundary tests cover the exact ceiling,
+Theme tests enforce a 287 KiB UTF-8 review budget; the handler has a separate
+288 KiB hard ceiling (`MAX_CONSOLE_DOCUMENT_BYTES`, unchanged by this follow-up). Each runtime source file stays under the
+updater's separate 256 KiB per-file limit. Boundary tests cover the exact ceiling,
 one byte above it, and multibyte text. CSP hashes, authentication, same-origin
 policy and no-store behavior are unchanged. Superseded theme rules have been
 removed or folded into their original declarations; the dashboard layout is
@@ -148,8 +147,7 @@ Captain door and panel transitions follow the shared cockpit state. Stars remain
 a separate saved preference, so hiding stars does not close the doors or hide
 controls. Login opens the Captain cockpit while retaining that preference;
 sign-out clears private state before closing it. Native Codex Savings uses the
-same authenticated data and rendering in both themes. The 224 KiB review budget
-accommodates the upstream Savings UI while retaining the 256 KiB hard ceiling.
+same authenticated data and rendering in both themes.
 
 ## November 12 upstream integration
 
@@ -161,8 +159,8 @@ stays inside Captain's viewing window, preserving its doors and login/logout
 presentation hooks. Admiral retains the upstream layout.
 
 Captain's composed CSS is whitespace-compacted without changing quoted strings
-or application scripts. The security handler remains bounded at 256 KiB and
-theme tests enforce a 255 KiB review budget; future upstream growth must pass
+or application scripts. The security handler remains bounded at 288 KiB and
+theme tests enforce a 287 KiB review budget; future upstream growth must pass
 that check before publication.
 
 The fork's existing machine-client draft bindings retain their durable keys.
@@ -229,9 +227,12 @@ suite still applies.
   appears immediately, and Pause Motion or reduced motion skips the dissolve.
 - **Warp-in:** a brief decorative streak burst plays when the cockpit opens with
   stars and motion enabled.
-- **Condition label:** derived only from existing state. Green requires a good
-  health tone; a non-good tone or an unknown/uncertain route phase shows Yellow;
-  a failed route phase shows Red Alert. It restates visible status and is not a
+- **Warp core (condition):** a small horizontal warp core with blue plasma
+  rings and a reaction chamber; with motion on, a pulse runs in from both ends while
+  the chamber swells to meet it. Its casing and label use the condition colour, derived only from
+  existing state. WARP CORE STABLE (green) requires a good health tone; a
+  non-good tone or an unknown/uncertain route phase shows WARP CORE UNSTABLE
+  (yellow); a failed route phase shows WARP CORE CRITICAL (red, flashing). It restates visible status and is not a
   separate monitor.
 - **Job readouts:** with motion on, a light chases along the Queued → Running
   → Completed tabs while Running is above zero, Queued/Running numerals pulse
@@ -240,6 +241,17 @@ suite still applies.
   are CSS reactions to the existing counter DOM (`aria-label`, the reel's
   `data-direction`), not per-job tracking, and stop with Pause Motion, reduced
   motion and Stealth.
+- **Settings menu:** Appearance comes first, then compact tool rows with line
+  icons (simplified from Lucide, ISC licence) instead of full-width pills,
+  ending with a red Sign out row. The Appearance and Auto stealth dropdowns,
+  and the Jobs and Requests dropdowns, are outlined pills in the same blue type. The rows are Workspace and Stars (cockpit only),
+  Pause motion, Stealth (its tip gives the Alt+Shift+S shortcut) with Auto as the
+  right half of the same split row (its setting opens below it), Documentation (its tip says it opens a new tab),
+  Feedback, Replay walkthrough and Sign out (log-out icon). Hovering or keyboard-focusing a row shows a short tip to the left of
+  the panel. Icons are inline SVG marked `aria-hidden`; each control keeps its
+  own text or `aria-label` as its name, and #motion's icon sits beside the
+  button because the shared script rewrites that button's text. The tricorder
+  sheet uses the same icons with visible labels and no hover tips.
 - **Decoration:** the number block in the commission slab, the nav codes and
   the viewer label are fixed build-time decoration, marked `aria-hidden`, and
   never represent telemetry.
@@ -256,8 +268,14 @@ shared stealth and cockpit rules were silently ineffective in this document. Pau
 the door transitions, warp, blinking codes, route pulse and star drift; the
 doors still reach the correct open or closed position. Most rules are written
 with native CSS nesting under `.console.captain`, which keeps the composed
-Captain document within the 255 KiB review budget (only a few bytes to spare after
-the cockpit at-a-glance layout; further additions need a trim first).
+Captain document within the 287 KiB review budget. The Engineering build drops shared rules whose selectors name a class it has
+removed from the page (for example `sidebar-foot` and `display-rail`), and fails
+if one of those classes reappears in the markup or script. Because the shared script sets `data-cockpit`, `data-stealth`,
+`data-starfield` and `data-hud-expanded` only to true or false (markup literals
+or `String(boolean)`), the Engineering build writes `[data-cockpit=true]` as the
+equivalent `[data-cockpit^=t]` (same matches, same specificity) and fails if the
+script assigns either attribute another way. CSS rule order is retained; no same-selector or media-block reordering is performed. The starfield path
+lists stars left to right as short relative moves.
 
 Local check (fixture data only): 1440, 1024, 900, 390 and 320 px; all five
 views; cockpit toggled both ways; Jobs, Requests, Groq and System panels opened;
@@ -273,7 +291,8 @@ device shell with a flip lid (insignia, status lights, rank pips), a recessed
 main screen that is the only scrolling area, a five-key keypad (the real view
 buttons, labelled OVR, JOBS, REQ, GROQ and SYS) and a Refresh / settings row.
 The lid is closed while signed out and flips open once the shared sign-in
-completes. On a phone held sideways, the lid and keypad sit beside the screen.
+completes. The lid's number row steps through fixed build-time values at a
+different rate per code; it is decoration, never telemetry. On a phone held sideways, the lid and keypad sit beside the screen.
 
 It is a separate document compiled by `tools/console-theme/tricorder.mjs` from
 the Admiral document, so it has its own size budget (about 219 KB, under the
@@ -311,3 +330,58 @@ and 320x640 (served automatically), the forced option at 812x375 landscape,
 screen); Stealth on and off; switching Tricorder → Engineering → Admiral and
 back; no horizontal overflow and no script errors. Real iOS Safari and Android
 Chrome have not been checked.
+
+## Operations layout (2026-11-19)
+
+Shared markup and script (both appearances): presentation of already-observed
+state only. No new request, approval or provider path.
+
+- **Request routing** on Overview: Coding client → Your approval → Picard Relay →
+  Groq → Your review. The current stage comes from the existing route phase and
+  workspace state: a draft is *Your approval* (no provider call yet); queued or
+  claimed work is *Picard Relay*; an active call is *Groq*; a saved, unreviewed
+  result is *Your review* (after the call). Failed and uncertain outcomes use warning colors; blocked and cancelled states do not imply a provider call. "Open job", "Open request"
+  or "Review result" opens the current item. When idle, the health pill is the
+  one ready status. The stage pulses only while work is queued, claimed or
+  invoking, and never with Pause motion or reduced motion.
+- **Counters** are buttons when nonzero and open Jobs filtered to that state
+  (new filters: Queued, Running, Uncertain, Failed). Zero counts are dimmed.
+- **Savings** distinguishes *Connect Codex* (no telemetry), *Awaiting usage*
+  (connected, no complete comparison) and the existing estimate; a missing
+  measurement never shows as zero. The estimate is the existing Codex-credit
+  calculation.
+- **Jobs**: 65/35 list and inspector (Engineering); the inspector shows title,
+  state, stored result and the reason first, with *Open request* for the input,
+  saved result and review, then the reference and timestamps. Job rows carry no
+  review outcome, so it is reached through Open request. On narrow screens the
+  inspector is a bottom drawer with *Close details*. Keyboard focus stays on the
+  same job across live refresh.
+- **Requests**: form beside a summary (model, attached context, limits); the
+  Review request action stays visible on short desktop viewports; the review step
+  states that approving sends the exact input to Groq once.
+- **Groq** leads with availability, model and the last recorded job from loaded
+  jobs, with a link to that job. Latency and rate-limit details are not recorded
+  by this relay, so they are not shown. The duplicate queue counts are hidden.
+- **System** shows one status per area (runtime health, updater reporting,
+  upstream check) beside the existing actions; versions, commits, source
+  identities and the release fingerprint are under *Technical details*.
+
+Engineering styling: command-burgundy frame, peach primary actions, condensed
+LCARS type for labels and commands and a normal-width face (15 px) for titles,
+descriptions, timestamps and form content, and one status palette shared by
+counters, activity, the Jobs table and the inspector. The warp core stays.
+
+## Follow-up integration verification (2026-11-19)
+
+Reapplied to fork main after PR #22, retaining public-trial controls, the newer
+completed-result rank accounting, exact approval/handoff checks, and savings
+quality accounting. The existing 288 KiB handler ceiling and 287 KiB theme
+review budget remain unchanged. CSS rule order is preserved.
+
+Local Linux Node 24.22.1: updater, full signed runtime, Unix sockets, docs and
+theme suites passed. Added routing regressions cover draft approval, result
+review, blocked/cancelled presentation and read-only navigation. Browser checks
+used a synthetic local fixture: Engineering desktop views and counter/inspector
+controls, System technical identities, Tricorder at 390 and 320 CSS pixels
+without horizontal overflow, and switching back to Admiral. No provider calls
+or live installation are part of these checks.

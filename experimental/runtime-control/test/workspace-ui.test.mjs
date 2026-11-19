@@ -293,3 +293,31 @@ test('legacy accepted-only progress is never reinterpreted as completed usage',a
  const h=await harness(t,{configTransform:c=>({...c,training:{v:1,hasSavedResult:true,hasReviewedResult:true},progress:{v:1,acceptedWork:100,atLeast:true}})});
  assert.equal(h.get('training-rank').textContent,'Lieutenant');assert.equal(h.get('training-next').textContent,'Work milestones unavailable.');
 });
+
+test('operations routing follows draft, saved result and uncertain handoff without an extra submission',async t=>{
+ let shownState;const h=await harness(t,{resultTransform:v=>shownState?{...v,state:shownState}:v});
+ await h.brief();
+ assert.equal(h.get('console-surface').dataset.routeStage,'approval');
+ assert.equal(h.f.calls,0);
+ await h.click('request-approve');
+ await h.f.dispatcher.runOnce();await h.click('request-check');
+ assert.equal(h.get('console-surface').dataset.routeStage,'review');
+ const writes=h.calls.filter(c=>c.method==='POST').length;
+ await h.click('route-open');
+ assert.equal(h.calls.filter(c=>c.method==='POST').length,writes);
+ assert.equal(h.f.calls,1);
+ for(const state of ['blocked','cancelled']){
+  shownState=state;await h.click('request-check');
+  assert.equal(h.get('console-surface').dataset.routeStage,'');
+  assert.equal(h.get('route-open').hidden,false);
+ }
+
+});
+
+test('operations presentation preserves public trial and technical identity controls',()=>{
+ const composed=admissionConsoleHtml(CONSOLE_HTML,{activationEnabled:true,workspaceEnabled:true,publicTestEnabled:true,theme:'captain'});
+ for(const id of ['runtime-version','runtime-sequence','source-commit','fingerprint','upstream-installed','upstream-incorporated','upstream-fork','upstream-latest'])assert.equal(composed.split('id="'+id+'"').length,2);
+ assert.match(composed,/Manage test allowance/);
+ assert.match(composed,/Last recorded job/);
+ assert.doesNotMatch(composed,/Recent provider calls/);
+});
