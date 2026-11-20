@@ -5,7 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {runInNewContext} from 'node:vm';
 import {CONSOLE_HTML,createConsoleHandler,MAX_CONSOLE_DOCUMENT_BYTES} from '../../experimental/runtime-control/src/oracle-service.mjs';
 import {admissionConsoleHtml,workspaceConsoleHtml} from '../../experimental/runtime-control/src/admission-ui.mjs';
-import {CAPTAIN_LOGIN_REVEAL,CAPTAIN_AUTH_CLOSE,CAPTAIN_CORE_CLOSE} from './captain.mjs';
+import {CAPTAIN_LOGIN_REVEAL,CAPTAIN_AUTH_CLOSE,CAPTAIN_CORE_CLOSE,compactStyles} from './captain.mjs';
 const standard=workspaceConsoleHtml(CONSOLE_HTML),captain=workspaceConsoleHtml(CONSOLE_HTML,{theme:'captain'});
 test('generated theme is current and both documents fit the bounded security handler',()=>{
  execFileSync(process.execPath,['tools/console-theme/build.mjs','--check']);
@@ -111,4 +111,17 @@ test('owner password customization is present, idempotent and rejects upstream d
  assert.equal(applyPasswordExtension(source),source);
  assert.throws(()=>applyPasswordExtension(source.replace('  async login(input){','  async renamedLogin(input){')),/anchor changed/);
  for(const html of [standard,captain]){assert.match(html,/id="password-dialog"/);assert.match(html,/autocomplete="current-password"/);assert.match(html,/id="password-open"[^>]*hidden/);}
+});
+
+test('CSS compaction preserves cascade order across intervening rules and at-rules',()=>{
+ const cases=[
+ '.a{& .b{color:red}}.a{color:blue}',
+ '.a{color:red}.b{color:green!important}.a{color:blue!important}',
+ '.a{margin-inline-start:1px}.b{margin-left:2px}.a{margin-inline-start:3px}',
+ '.a{color:red}@layer overrides{.a{color:green}}.a{color:blue}',
+ '.a{color:red}@media(width>900px){.a{color:green}}.a{color:blue}'
+ ];
+ for(const css of cases)assert.equal(compactStyles('<style>'+css+'</style>'),'<style>'+css+'</style>');
+ assert.equal(compactStyles('<style>.a{color:red}.a{color:blue}</style>'),'<style>.a{color:red;color:blue}</style>');
+ assert.equal(compactStyles('<style>.a{content:"a;{b}"}.a{color:blue}</style>'),'<style>.a{content:"a;{b}";color:blue}</style>');
 });

@@ -71,10 +71,44 @@ export function compactStyles(html){
  const compact=css=>{
   css=keepStrings(css,/\/\*[\s\S]*?\*\//,()=>'');
   css=keepStrings(css,/\s*([{};,])\s*|:\s+|\s+/,(token,punctuation)=>punctuation??(token[0]===':'?':':' '));
-  return keepStrings(css,/;}/,()=>'}').trim();
+  return mergeBlocks(keepStrings(css,/;}/,()=>'}').trim());
  };
  return html.replace(/<style>([\s\S]*?)<\/style>/g,(_,css)=>'<style>'+compact(css)+'</style>');
 }
+
+// Scanning helpers for compact CSS. Quoted strings are skipped whole.
+const skipQuoted=(s,j)=>{const q=s[j++];while(j<s.length&&s[j]!==q)j+=s[j]==='\\'?2:1;return j;};
+const closing=(s,j,open,close)=>{for(let depth=0;j<s.length;j++){const c=s[j];if(c==='"'||c==="'")j=skipQuoted(s,j);else if(c===open)depth++;else if(c===close&&!--depth)return j;}return s.length;};
+// [prelude, body|null] pairs at the top level of a block body.
+function cssItems(css){
+ const items=[];let i=0;
+ while(i<css.length){
+  let j=i;
+  for(let depth=0;j<css.length;j++){const c=css[j];if(c==='"'||c==="'")j=skipQuoted(css,j);else if(c==='('||c==='[')depth++;else if(c===')'||c===']')depth--;else if(!depth&&(c==='{'||c===';'||c==='}'))break;}
+  if(css[j]==='{'){const end=closing(css,j,'{','}');items.push([css.slice(i,j),css.slice(j+1,end)]);i=end+1;}
+  else{items.push([css.slice(i,j),null]);i=j+1;}
+ }
+ return items.filter(([prelude,body])=>body!==null||prelude);
+}
+
+// Merge only adjacent identical blocks. Do not reorder rules: specificity,
+// importance, logical properties and nested selectors can affect the cascade.
+function mergeBlocks(css){
+ const out=[];
+ for(let [prelude,body] of cssItems(css)){
+  const group=/^@(media|supports)/.test(prelude);
+  if(body!==null&&group)body=mergeBlocks(body);
+  const last=out.at(-1);
+  const flat=body!==null&&!prelude.startsWith('@')&&cssItems(body).every(([,b])=>b===null)&&last&&cssItems(last[1]??'').every(([,b])=>b===null);
+  const target=(group||flat)&&last?.[0]===prelude&&last[1]!==null?out.length-1:-1;
+  if(target<0){out.push([prelude,body]);continue;}
+  const earlier=out[target][1];
+  if(group){out[target][1]=mergeBlocks(earlier+body);continue;}
+  out[target][1]=earlier+(earlier?';':'')+body;
+ }
+ return serialize(out).replace(/;$/,'');
+}
+const serialize=items=>items.map(([prelude,body],k)=>body!==null?prelude+'{'+body+'}':prelude+(k<items.length-1?';':'')).join('');
 
 const REMOVED_CLASSES=['sidebar-foot','motto','hud-numbers','display-rail','display-modes','display-effects','folding-glass-arc'];
 
@@ -297,7 +331,7 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
  .core-column:before,.core-column:after{content:"";position:absolute;top:7%;bottom:7%;width:22px;border:5px solid var(--b);background:repeating-linear-gradient(180deg,var(--b) 0 2px,#0000 0 16px) 100% 0/9px 100% no-repeat}
  .core-column:before{left:0;border-right:0;border-radius:18px 0 0 18px}
  .core-column:after{right:0;border-left:0;border-radius:0 18px 18px 0;background-position:0 0}
- .core-tube{display:grid;grid-template-rows:9% 1fr 13% 1fr 9%;width:156px}
+ .core-tube{display:grid;grid-template-rows:9% 1fr 13% 1fr 9%;width:clamp(156px,26cqh,300px)}
  .core-tube i{margin:0 18px;background:linear-gradient(90deg,#0000 47%,#000 0 53%,#0000 0),linear-gradient(#0000,#fffa 50%,#0000) 0 -70%/100% 34% no-repeat,linear-gradient(90deg,#0007,#0000 30% 70%,#0007),linear-gradient(var(--a) 70%,var(--d) 0) 0 0/100% 10px}
  .core-tube i:nth-child(2){--a:#8cf;--d:#1d3a63}
  .core-tube i:nth-child(4){--a:#f66;--d:#5a1616}
@@ -314,7 +348,7 @@ body:has(.console.captain:not([data-stealth=true])){margin:0;background:#000}
 @keyframes core-pulse{80%{filter:brightness(1.7);box-shadow:0 0 26px #9cf}}
 @media(min-width:901px){.console.captain:not([data-stealth=true]){.core-screen{container-type:size;overflow:auto}&:not([data-cockpit=true]) .core-screen{height:100%;min-height:520px}}}
 @container (min-height:470px){.console.captain:not([data-stealth=true]) .core-readouts .core-x{display:block}}
-@media(max-width:900px){.console.captain:not([data-stealth=true]){.core-screen{gap:16px;padding:18px 12px 18px 16px;border-left-width:14px;border-top-width:8px;border-bottom-width:8px;border-radius:32px 0 0 32px}&[data-cockpit=true] .core-screen{inset:8px 8px 200px}.core-column{min-height:240px;padding:0 18px}.core-column:before,.core-column:after{width:14px;border-width:4px}.core-tube{width:88px}.core-tube i{margin:0 10px}.core-screen{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:none;align-content:start}.core-keys{grid-column:1/-1;flex-flow:row wrap}.core-keys span{flex:1 1 22%;min-height:40px;font-size:13px}.core-keys span:is(:first-child,:last-child){border-radius:0}.core-rail i:nth-child(4){flex-basis:40px}}}
+@media(max-width:900px){.console.captain:not([data-stealth=true]){.core-screen{gap:16px;padding:18px 12px 18px 16px;border-left-width:14px;border-top-width:8px;border-bottom-width:8px;border-radius:32px 0 0 32px}&[data-cockpit=true] .core-screen{inset:8px 8px 200px}.core-column{min-height:240px;padding:0 18px}.core-column:before,.core-column:after{width:14px;border-width:4px}.core-tube{width:112px}.core-tube i{margin:0 10px}.core-screen{grid-template-columns:minmax(0,1fr) auto;grid-template-rows:none;align-content:start}.core-keys{grid-column:1/-1;flex-flow:row wrap}.core-keys span{flex:1 1 22%;min-height:40px;font-size:13px}.core-keys span:is(:first-child,:last-child){border-radius:0}.core-rail i:nth-child(4){flex-basis:40px}}}
 .console.captain:not([data-stealth=true]){
  &:has(#auth:not([hidden])) .captain-condition{display:none}
  .captain-topbar .console-utilities{grid-row:2;grid-column:3;display:flex;align-items:center;gap:6px;margin:0;padding:0 18px 0 0;background:none;border:0;box-shadow:none}
