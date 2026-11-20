@@ -90,7 +90,7 @@ Every selected path component must be free of symlinks and Windows junctions. Ha
 
 Each machine draft is durably bound to its client id. The laptop cannot adopt another client's draft, an owner-console draft, or a signed-board result by knowing an id. Its saved-result responses never include owner reviews, and its configuration response omits account-wide history statistics and progress. Reuse an id only for credential rotation of the same client, never for a different machine or user.
 
-Request text is at most 4,000 characters. Context is at most 4,000 characters. The combined provider input is at most 12,000 bytes. Truncation is reported with `[truncated]` and an omitted-character count. The provider remains Groq `openai/gpt-oss-20b`, one call, 4,096 output tokens, no tools, no retries, and no paid fallback. The draft lives 15 minutes. The approval proof lives 60 seconds and is used inside the same submit call.
+Request text is at most 4,000 characters. Context is at most 4,000 characters. The combined provider input is at most 12,000 bytes. Preparation refuses truncation before creating a draft and returns coverage with an omitted-character count. Select smaller line ranges instead. The provider remains Groq `openai/gpt-oss-20b`, one call, 4,096 output tokens, no tools, no retries, and no paid fallback. The draft lives 15 minutes. The approval proof lives 60 seconds and is used inside the same submit call.
 
 ## Review the answer
 
@@ -131,3 +131,10 @@ npm run docs:check
 ```
 
 `npm run test:coding-connector` uses synthetic fixtures. It does not call Groq and it does not prove the live token works.
+
+## Context coverage and task contracts
+
+Preparation refuses oversized context before creating a remote draft. Select focused
+line ranges with `{path,startLine,endLine}` and inspect returned coverage and full-file
+hashes. Optional `contract` supplies `acceptanceCriteria` and `constraints`, frozen
+into the exact request before approval. See [the quality workflow](QUALITY-WORKFLOW.md).

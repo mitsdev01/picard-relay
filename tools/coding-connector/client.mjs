@@ -2,6 +2,7 @@
 import https from 'node:https';
 import {randomUUID} from 'node:crypto';
 import {buildCodingContext} from './context.mjs';
+import {compileTaskContract,requireCompleteContext} from './task-contract.mjs';
 
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const PURPOSES=new Set(['public-source-review','sanitized-source-proposal']);
@@ -74,9 +75,9 @@ export function createCodingClient({origin,token,journal,transport,workspaceRoot
   if(!input||typeof input!=='object'||Array.isArray(input))fail('request_invalid');
   const purpose=input.purpose??'sanitized-source-proposal',taskId=input.taskId??'',paths=input.paths??[],note=input.note??'';
   if(input.requestId!==undefined&&!UUID.test(input.requestId)||!text(input.title,200)||!input.title.trim()||!text(input.requestText,4000)||!input.requestText.trim()||typeof taskId!=='string'||taskId.length>200||!PURPOSES.has(purpose)||typeof note!=='string'||note.length>4000)fail('request_invalid');
-  let built;try{built=buildCodingContext({workspaceRoot,journalDir,deniedFiles,paths,note,title:input.title.trim(),requestText:input.requestText.trim()});}
-  catch(error){fail(error?.code==='context_excluded'||error?.code==='request_too_large'||error?.code==='workspace_unavailable'?error.code:'request_invalid');}
-  return {requestId:input.requestId,title:input.title.trim(),requestText:input.requestText.trim(),context:built.context,purpose,taskId,truncated:built.truncated,omittedCharacters:built.omittedCharacters,included:built.included};
+  let built,requestText;try{requestText=compileTaskContract(input.requestText.trim(),input.contract);built=requireCompleteContext(buildCodingContext({workspaceRoot,journalDir,deniedFiles,paths,note,title:input.title.trim(),requestText}));}
+  catch(error){const code=['context_excluded','request_too_large','workspace_unavailable','context_file_too_large','line_range_invalid','task_contract_invalid','task_contract_too_large','context_truncated_refused'].includes(error?.code)?error.code:'request_invalid';throw Object.assign(new CodingClientError(code),error.preparation?{preparation:error.preparation}:{});}
+  return {requestId:input.requestId,title:input.title.trim(),requestText,context:built.context,purpose,taskId,truncated:built.truncated,omittedCharacters:built.omittedCharacters,included:built.included,coverage:built.coverage};
  }
  function wire(input){return {requestId:input.requestId,taskId:input.taskId,title:input.title,requestText:input.requestText,context:input.context,purpose:input.purpose};}
  function acceptDraft(record,body){
@@ -92,7 +93,7 @@ export function createCodingClient({origin,token,journal,transport,workspaceRoot
    const stored={title:normalized.title,requestText:normalized.requestText,context:normalized.context,purpose:normalized.purpose,taskId:normalized.taskId};
    if(record&&!sameInput(record,stored))fail('draft_conflict');
    if(!record)record=journal.create({v:1,requestId,revision:1,state:'preparing',input:stored,eventId:null,draftSha256:null,submission:null,updatedAt:new Date(now()).toISOString()});
-   const providerLimits=await limits();
+   const providerLimits={...await limits(),coverage:normalized.coverage};
    if(record.state!=='preparing')return {requestId,eventId:record.eventId,state:record.state,recovered:true,providerCall:false,executedByConnector:false,truncated:normalized.truncated,omittedCharacters:normalized.omittedCharacters,included:normalized.included,payload:wire({...stored,requestId}),...providerLimits};
    const existing=await call('GET','/workspace/drafts/'+requestId);
    if(existing.status===200)record=acceptDraft(record,existing.body);

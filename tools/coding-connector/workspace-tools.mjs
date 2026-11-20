@@ -1,3 +1,4 @@
+import {taskContractSchema} from './task-contract.mjs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {loadRegistry,WorkspaceError} from './trusted-files.mjs';
@@ -18,6 +19,11 @@ export const WORKSPACE_TOOLS=[
  {name:'picard_workspace_recover',description:'Cancel an unapplied task or recover a failed/interrupted file transaction from verified backups. Never reruns tests or provider requests. Refuses a running operation or an interrupted test requiring process review; preserves files whose contents changed after Picard edits.',inputSchema:bound},
  {name:'picard_workspace_handoff',description:'For one authorized task in the open Cursor window: verify sessionRoot matches the enrolled workspace root, prepare and submit once, then finish collect and apply locally without blocking this call. Requires allowApply and either explicit paths or one discover query that yields 1-8 unambiguous files. Poll picard_workspace_status; no second submit.',inputSchema:schema({workspaceId:id,sessionRoot:{type:'string',minLength:1},title:{type:'string',maxLength:200},requestText:{type:'string',maxLength:2800},paths:{type:'array',minItems:1,maxItems:8,items:{type:'string',minLength:1,maxLength:240}},query:{type:'string',minLength:2,maxLength:120}},['workspaceId','sessionRoot','title','requestText'])}
 ];
+for(const name of ['picard_workspace_prepare','picard_workspace_handoff']){
+ const tool=WORKSPACE_TOOLS.find(t=>t.name===name);
+ tool.inputSchema.properties.contract=taskContractSchema;
+ tool.description+=' Optional contract adds acceptanceCriteria and constraints to the frozen request; it does not change execution permissions.';
+}
 const methods={picard_workspaces:'list',picard_workspace_discover:'discover',picard_workspace_prepare:'prepare',picard_workspace_submit:'submit',picard_workspace_status:'status',picard_workspace_collect:'collect',picard_workspace_apply:'apply',picard_workspace_recover:'recover',picard_workspace_handoff:'handoff'};
 export function createWorkspaceToolHandler(config,registryFile){
  const connectorRoot=path.resolve(fileURLToPath(new URL('../../',import.meta.url)));

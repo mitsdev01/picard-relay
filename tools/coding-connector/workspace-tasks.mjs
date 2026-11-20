@@ -2,10 +2,12 @@
 import * as fs from 'node:fs';
 import path from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {compileTaskContract} from './task-contract.mjs';
 import {spawn} from 'node:child_process';
 import {WorkspaceError,requireThat,sha,readSource,locate,relativeFile,directory} from './trusted-files.mjs';
 const UUID=/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const terminal=new Set(['passed','rolled_back','cancelled','baseline_failed']);
+function taskBrief(text,contract){try{return compileTaskContract(text,contract,2800);}catch(e){throw new WorkspaceError(e.code??'task_contract_invalid');}}
 const outputContract='Return only JSON: {"v":1,"edits":[{"path":"relative/path","beforeSha256":"provided full-file hash","search":"exact nonempty unique text within the supplied excerpt","replace":"replacement text"}]}. For a declared new file use {"path":"relative/path","beforeSha256":null,"create":"full UTF-8 contents"}. No other fields, commands, prose, guessed files or markdown. At most one edit per file. If context is insufficient return {"v":1,"edits":[]}. Preserve unrelated code.';
 function proposalText(body){const marked=body.match(/^\[Groq \/ [^\r\n\]]+\]\r?\n([\s\S]*)$/);return marked?marked[1]:body;}
 function visibleNewlines(value){return value.replace(/\\r/g,'\r').replace(/\\n/g,'\n').replace(/\\t/g,'\t');}
@@ -59,7 +61,7 @@ export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTes
    if(f.create===true)requireThat(source===null&&f.writable&&!f.startLine&&!f.endLine,'new_file_must_be_absent');else requireThat(source!==null,'file_missing');
    let excerpt='',start=0,end=0;
    if(source){const lines=source.text.split('\n'),a=f.startLine??1,b=f.endLine??lines.length;requireThat(Number.isSafeInteger(a)&&Number.isSafeInteger(b)&&a>=1&&b>=a&&b<=lines.length,'line_range_invalid');start=lines.slice(0,a-1).join('\n').length+(a>1?1:0);excerpt=lines.slice(a-1,b).join('\n');end=start+excerpt.length;}
-   return {path:f.path,writable:f.writable,before:source?.base64??null,beforeSha256:source?.sha256??null,mode:source?.mode??0o644,excerpt,start,end};
+   return {path:f.path,writable:f.writable,before:source?.base64??null,beforeSha256:source?.sha256??null,mode:source?.mode??0o644,excerpt,start,end,startLine:source?(f.startLine??1):null,endLine:source?(f.endLine??source.text.split('\n').length):null};
   });
  }
  function assertHandoffContext(title,requestText,files){
@@ -145,15 +147,16 @@ export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTes
     requireThat(typeof args.title==='string'&&args.title.length<=200&&args.title.trim()&&typeof args.requestText==='string'&&args.requestText.trim()&&args.requestText.length<=2800&&Array.isArray(args.files)&&args.files.length>0&&args.files.length<=8,'task_input_invalid');
     requireThat(!fs.existsSync(path.join(dir,'active')),'workspace_task_active');
     const files=fileEntriesFromSpecs(w,args.files);
-    assertHandoffContext(args.title.trim(),args.requestText.trim(),files);
+    const brief=taskBrief(args.requestText.trim(),args.contract);
+    assertHandoffContext(args.title.trim(),brief,files);
     const context=files.map(f=>JSON.stringify({path:f.path,sha256:f.beforeSha256,writable:f.writable,...(f.before===null?{newFile:true}:{excerpt:f.excerpt})})).join('\n');
-    const requestText=args.requestText+'\n\n'+outputContract;
+    const requestText=brief+'\n\n'+outputContract;
     t={v:1,id:randomUUID(),workspaceId,root:w.root,fingerprint:r.fingerprint,state:'preparing',files,input:{title:args.title,requestText,note:context,paths:[]},tests:[]};
     durable(path.join(dir,'active'),t.id,{exclusive:true});save(dir,t);
    }
    return exclusive(dir,t,async()=>{
     requireThat(['preparing','prepared'].includes(t.state),'prepare_not_repeatable');assertBaseline(w,t);
-    try{const prepared=await makeClient(w).prepare({...t.input,requestId:t.id});requireThat(!prepared.truncated,'context_truncated_refused');t.state='prepared';save(dir,t);return {...view(t),prepared};}
+    try{const prepared=await makeClient(w).prepare({...t.input,requestId:t.id});requireThat(!prepared.truncated,'context_truncated_refused');t.state='prepared';save(dir,t);return {...view(t),prepared,coverage:t.files.map(f=>({path:f.path,sourceSha256:f.beforeSha256,startLine:f.startLine??null,endLine:f.endLine??null,selectedCharacters:f.excerpt.length,status:f.before===null?'declared_new_file':'complete'}))};}
     catch(e){e.taskId=t.id;throw e;}
    });
   },
@@ -249,8 +252,9 @@ export function createWorkspaceTasks({registry,makeClient,runTest=runEnrolledTes
     specs=found.files.map(f=>({path:f.path,writable:true}));
    }
    const files=fileEntriesFromSpecs(w,specs);
-   assertHandoffContext(title.trim(),requestText.trim(),files);
-   const prepared=await agent.prepare({workspaceId,title:title.trim(),requestText:requestText.trim(),files:specs});
+   const brief=taskBrief(requestText.trim(),args.contract);
+   assertHandoffContext(title.trim(),brief,files);
+   const prepared=await agent.prepare({workspaceId,title:title.trim(),requestText:brief,files:specs});
    const submitted=await agent.submit({workspaceId,taskId:prepared.taskId});
    scheduleFinish(async()=>agent.finishHandoff({workspaceId,taskId:prepared.taskId}));
    return {...view(load(workspaceId,prepared.taskId).t),submission:submitted.remote?.submission??'sent_once',finishScheduled:true,instruction:'Poll picard_workspace_status for this taskId until the state is terminal. No second submit.'};
