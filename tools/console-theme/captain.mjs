@@ -79,8 +79,6 @@ export function compactStyles(html){
 // Scanning helpers for compact CSS. Quoted strings are skipped whole.
 const skipQuoted=(s,j)=>{const q=s[j++];while(j<s.length&&s[j]!==q)j+=s[j]==='\\'?2:1;return j;};
 const closing=(s,j,open,close)=>{for(let depth=0;j<s.length;j++){const c=s[j];if(c==='"'||c==="'")j=skipQuoted(s,j);else if(c===open)depth++;else if(c===close&&!--depth)return j;}return s.length;};
-// Split at top-level commas (outside (), [] and strings).
-const splitList=s=>{const parts=[];let depth=0,start=0;for(let j=0;j<s.length;j++){const c=s[j];if(c==='"'||c==="'")j=skipQuoted(s,j);else if(c==='('||c==='[')depth++;else if(c===')'||c===']')depth--;else if(c===','&&!depth){parts.push(s.slice(start,j));start=j+1;}}parts.push(s.slice(start));return parts;};
 // [prelude, body|null] pairs at the top level of a block body.
 function cssItems(css){
  const items=[];let i=0;
@@ -101,14 +99,12 @@ function mergeBlocks(css){
   const group=/^@(media|supports)/.test(prelude);
   if(body!==null&&group)body=mergeBlocks(body);
   const last=out.at(-1);
-  const target=body!==null&&(group||!prelude.startsWith('@'))&&last?.[0]===prelude&&last[1]!==null?out.length-1:-1;
+  const flat=body!==null&&!prelude.startsWith('@')&&cssItems(body).every(([,b])=>b===null)&&last&&cssItems(last[1]??'').every(([,b])=>b===null);
+  const target=(group||flat)&&last?.[0]===prelude&&last[1]!==null?out.length-1:-1;
   if(target<0){out.push([prelude,body]);continue;}
   const earlier=out[target][1];
   if(group){out[target][1]=mergeBlocks(earlier+body);continue;}
-  const items=cssItems(body),lead=items.findIndex(([,inner])=>inner!==null);
-  const decls=(lead<0?items:items.slice(0,lead)).map(([p])=>p).join(';');
-  const rest=lead<0?'':serialize(items.slice(lead)).replace(/;$/,'');
-  out[target][1]=earlier+(earlier&&!earlier.endsWith('}')?';':'')+(decls?'&{'+decls+'}':'')+rest;
+  out[target][1]=earlier+(earlier?';':'')+body;
  }
  return serialize(out).replace(/;$/,'');
 }

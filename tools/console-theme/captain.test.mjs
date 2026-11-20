@@ -115,12 +115,13 @@ test('owner password customization is present, idempotent and rejects upstream d
 
 test('CSS compaction preserves cascade order across intervening rules and at-rules',()=>{
  const cases=[
+ '.a{& .b{color:red}}.a{color:blue}',
  '.a{color:red}.b{color:green!important}.a{color:blue!important}',
  '.a{margin-inline-start:1px}.b{margin-left:2px}.a{margin-inline-start:3px}',
  '.a{color:red}@layer overrides{.a{color:green}}.a{color:blue}',
  '.a{color:red}@media(width>900px){.a{color:green}}.a{color:blue}'
  ];
  for(const css of cases)assert.equal(compactStyles('<style>'+css+'</style>'),'<style>'+css+'</style>');
- assert.equal(compactStyles('<style>.a{color:red}.a{color:blue}</style>'),'<style>.a{color:red;&{color:blue}}</style>');
- assert.equal(compactStyles('<style>.a{content:"a;{b}"}.a{color:blue}</style>'),'<style>.a{content:"a;{b}";&{color:blue}}</style>');
+ assert.equal(compactStyles('<style>.a{color:red}.a{color:blue}</style>'),'<style>.a{color:red;color:blue}</style>');
+ assert.equal(compactStyles('<style>.a{content:"a;{b}"}.a{color:blue}</style>'),'<style>.a{content:"a;{b}";color:blue}</style>');
 });
