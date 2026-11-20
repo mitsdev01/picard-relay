@@ -22,6 +22,12 @@ async function prepared(f,files=[{path:'badge.js',writable:true}]) {const p=awai
 async function staged(f,edits=null,files){const args=await prepared(f,files);await f.agent.submit(args);f.body={v:1,edits:edits??[{path:'badge.js',beforeSha256:sha(fs.readFileSync(path.join(f.root,'badge.js'))),search:'"New audit"',replace:'"1 new audit"'}]};await f.agent.collect(args);return args;}
 const read=f=>fs.readFileSync(path.join(f.root,'badge.js'),'utf8');
 
+test('trusted workspace freezes criteria, returns coverage and keeps JSON contract during recovery',async t=>{
+ const f=fixture(t),p=await f.agent.prepare({workspaceId:'easyjob',title:'Count',requestText:'Update count.',contract:{acceptanceCriteria:['Show singular for one.'],constraints:['Preserve unrelated code.']},files:[{path:'badge.js',writable:true,startLine:1,endLine:1}]});
+ assert.match(f.input.requestText,/Show singular for one/);assert.match(f.input.requestText,/Return only JSON/);assert.equal(p.coverage[0].startLine,1);assert.equal(p.coverage[0].status,'complete');
+ const original=f.input.requestText;await f.agent.prepare({workspaceId:'easyjob',taskId:p.taskId});assert.equal(f.input.requestText,original);assert.equal(f.counts.submitCalls,0);
+});
+
 test('workspace selected independently of connector repo; exact context, no silent truncation',async t=>{
  const f=fixture(t),args=await prepared(f);assert.match(f.input.note,/New audit/);assert.match(f.input.note,/sha256/);assert.equal(f.counts.submitCalls,0);assert.equal(f.agent.list().workspaces[0].root,f.root);
  await f.agent.recover(args);fs.writeFileSync(path.join(f.root,'large.js'),'x'.repeat(5000));

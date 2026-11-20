@@ -86,3 +86,5 @@ Older checkpoint documents retain their original date and verification limits.
 For longer-term work: [physical voice badge](BADGE-RESEARCH.md),
 [provider research](../experimental/compute-broker/PROVIDERS.md) and
 [execution enrollment](../experimental/compute-broker/EXECUTION.md).
+
+**Output quality:** [Context coverage, task contracts and offline evaluation](QUALITY-WORKFLOW.md)

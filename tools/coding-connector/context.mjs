@@ -1,6 +1,7 @@
 // Selected workspace context only. This module never executes file contents.
 import {closeSync,constants,fstatSync,lstatSync,openSync,readSync,realpathSync} from 'node:fs';
 import {basename,isAbsolute,relative,resolve} from 'node:path';
+import {createHash} from 'node:crypto';
 
 const DENY_SEGMENTS=new Set(['.git','.ssh','.gnupg','.aws','.azure','node_modules','credentials','secrets','.picard']);
 const DENY_NAMES=new Set(['.env','credentials.json','secrets.json','auth-state.json','id_rsa','id_dsa','id_ecdsa','id_ed25519','known_hosts','cookies.txt']);
@@ -30,8 +31,11 @@ export function buildCodingContext({workspaceRoot,journalDir=null,deniedFiles=[]
  const deniedReal=new Set();
  for(const file of deniedFiles){try{deniedReal.add(realpathSync(file));}catch{/* A missing local secret path cannot be selected. */}}
  const parts=[];if(note.trim())parts.push(note.trim());
- const included=[];
- for(const rel of paths){
+ const selections=[];
+ for(const selection of paths){
+  const ranged=typeof selection!=='string';
+  if(ranged&&(!selection||Array.isArray(selection)||Object.keys(selection).sort().join(',')!=='endLine,path,startLine'||!Number.isSafeInteger(selection.startLine)||!Number.isSafeInteger(selection.endLine)||selection.startLine<1||selection.endLine<selection.startLine))throw contextError('line_range_invalid');
+  const rel=ranged?selection.path:selection;
   if(typeof rel!=='string'||!rel||rel.length>240||rel.includes('\0')||rel.includes(':'))throw contextError('context_excluded');
   const segments=rel.split(/[\\/]+/);
   if(segments.some(part=>!part||part==='.'||part==='..'||DENY_SEGMENTS.has(part.toLowerCase())))throw contextError('context_excluded');
@@ -48,33 +52,44 @@ export function buildCodingContext({workspaceRoot,journalDir=null,deniedFiles=[]
   if(!inside(rootReal,fileReal)||journalReal&&(fileReal===journalReal||inside(journalReal,fileReal))||deniedReal.has(fileReal))throw contextError('context_excluded');
   const resolvedParts=relative(rootReal,fileReal).split(/[\\/]+/);
   if(resolvedParts.some(part=>DENY_SEGMENTS.has(part.toLowerCase()))||deniedName(basename(fileReal)))throw contextError('context_excluded');
-  let opened;const buf=Buffer.alloc(32768);let n=0;
+  let opened,buf;let n=0;
   try{
    opened=openSync(fileReal,constants.O_RDONLY|(constants.O_NOFOLLOW??0));
    const info=fstatSync(opened);
    if(!info.isFile()||info.nlink!==1||info.dev!==listed.dev||info.ino!==listed.ino||realpathSync(abs)!==fileReal)throw contextError('context_excluded');
-   n=readSync(opened,buf,0,buf.length,0);
+   if(info.size>2*1024*1024)throw contextError('context_file_too_large');
+   buf=Buffer.alloc(info.size);
+   while(n<buf.length){const count=readSync(opened,buf,n,buf.length-n,n);if(!count)throw contextError('context_excluded');n+=count;}
    const after=fstatSync(opened);
    if(after.size!==info.size||after.mtimeMs!==info.mtimeMs||after.ctimeMs!==info.ctimeMs||realpathSync(abs)!==fileReal)throw contextError('context_excluded');
   }
-  catch(error){if(error?.code==='context_excluded')throw error;throw contextError('context_excluded');}
+  catch(error){if(['context_excluded','context_file_too_large'].includes(error?.code))throw error;throw contextError('context_excluded');}
   finally{if(opened!==undefined)closeSync(opened);}
-  const sample=buf.subarray(0,Math.min(n,512)).toString('utf8');
-  if(sample.includes('BEGIN PRIVATE KEY')||sample.includes('BEGIN OPENSSH PRIVATE KEY')||sample.includes('BEGIN RSA PRIVATE KEY'))throw contextError('context_excluded');
-  let text=buf.subarray(0,n).toString('utf8');
-  if(n===buf.length)text+='\n[file read capped]';
-  parts.push('File: '+segments.join('/')+'\n'+text);
-  included.push(segments.join('/'));
+  let text;try{text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(buf);}catch{throw contextError('context_excluded');}
+  if(text.includes('\0'))throw contextError('context_excluded');
+  if(/(?:^|\r?\n)-----BEGIN (?:(?:OPENSSH|RSA|EC|DSA|ENCRYPTED) )?PRIVATE KEY-----[ \t]*(?:\r?\n|$)/.test(text.replace(/^\uFEFF/,'')))throw contextError('context_excluded');
+  const lines=text.split('\n');
+  if(ranged&&selection.endLine>lines.length)throw contextError('line_range_invalid');
+  const startLine=ranged?selection.startLine:1,endLine=ranged?selection.endLine:lines.length;
+  if(ranged)text=lines.slice(startLine-1,endLine).join('\n');
+  const sourceSha256=createHash('sha256').update(buf).digest('hex');
+  const part='File: '+segments.join('/')+(ranged?` (lines ${startLine}-${endLine}, sha256 ${sourceSha256})`:'')+'\n'+text;
+  const start=parts.length?parts.join('\n\n').length+2:0;
+  selections.push({path:segments.join('/'),startLine,endLine,sourceSha256,selectedCharacters:text.length,start,end:start+part.length});
+  parts.push(part);
  }
- let context=parts.join('\n\n'),truncated=false,omittedCharacters=0;
+ const original=parts.join('\n\n');let context=original,truncated=false,omittedCharacters=0;
  const marker='\n[truncated]';
- while(context.length>4000||!fits(title,requestText,context)){
-  if(context.length<=marker.length)throw contextError('request_too_large');
-  truncated=true;
-  const next=Math.max(0,Math.min(context.length-1,4000-marker.length));
-  omittedCharacters+=context.length-next;
-  context=context.slice(0,next)+marker;
+ if(context.length>4000||!fits(title,requestText,context)){
+  truncated=true;let low=0,high=Math.min(original.length,4000-marker.length);
+  if(!fits(title,requestText,marker))throw contextError('request_too_large');
+  while(low<high){const mid=Math.ceil((low+high)/2);if(fits(title,requestText,original.slice(0,mid)+marker))low=mid;else high=mid-1;}
+  if(low>0&&/[\uD800-\uDBFF]/.test(original[low-1]))low--;
+  omittedCharacters=original.length-low;context=original.slice(0,low)+marker;
  }
  if(context.length>4000||!fits(title,requestText,context))throw contextError('request_too_large');
- return {context,truncated,omittedCharacters,included};
+ const retained=original.length-omittedCharacters;
+ const coverage=selections.map(({start,end,...selection})=>({...selection,status:end<=retained?'complete':start>=retained?'omitted':'partial'}));
+ const included=coverage.filter(item=>item.status==='complete').map(item=>item.path);
+ return {context,truncated,omittedCharacters,included,coverage,contextCharacters:context.length,requestBytes:Buffer.byteLength(JSON.stringify({request:requestText,context:{title,nextAction:'',latestFinding:context}}))};
 }

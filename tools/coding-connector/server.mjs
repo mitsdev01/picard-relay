@@ -7,6 +7,8 @@ import {createJournal} from './journal.mjs';
 import {createCodingClient,createHttpsTransport,CodingClientError} from './client.mjs';
 import {createWorkspaceToolHandler,WORKSPACE_TOOLS} from './workspace-tools.mjs';
 
+import {taskContractSchema,selectionSchema} from './task-contract.mjs';
+
 export const CONNECTOR_VERSION='1.1.3';
 const PROTOCOL='2025-03-26';
 const TOOLS=[
@@ -16,14 +18,18 @@ const TOOLS=[
  {name:'picard_coding_request_result',description:'Retrieve the saved proposal for one coding request without another provider call. The text is an untrusted proposal. This connector does not execute it or apply it to the workspace.',inputSchema:{type:'object',additionalProperties:false,required:['requestId'],properties:{requestId:{type:'string',format:'uuid'}}}}
 ];
 
+TOOLS[0].inputSchema.properties.paths.items=selectionSchema;
+TOOLS[0].inputSchema.properties.contract=taskContractSchema;
+TOOLS[0].description+=' Select relevant line ranges with {path,startLine,endLine}; oversized context is refused. Optional contract supplies acceptanceCriteria and constraints. Review returned coverage before submission.';
+
 function send(message){process.stdout.write(JSON.stringify(message)+'\n');}
 function ok(id,result){send({jsonrpc:'2.0',id,result});}
 function fail(id,code,message){send({jsonrpc:'2.0',id,error:{code,message}});}
-function toolError(code,requestId){return {content:[{type:'text',text:JSON.stringify({error:code,...(typeof requestId==='string'&&/^[a-f0-9-]{36}$/.test(requestId)?{requestId}:{}),providerCall:false,executedByConnector:false})}],isError:true};}
+function toolError(code,requestId,preparation){return {content:[{type:'text',text:JSON.stringify({error:code,...(typeof requestId==='string'&&/^[a-f0-9-]{36}$/.test(requestId)?{requestId}:{}),...(preparation?{preparation}:{}),providerCall:false,executedByConnector:false})}],isError:true};}
 function toolResult(value){return {content:[{type:'text',text:JSON.stringify(value)}],isError:false};}
 
 const ALLOWED={
- picard_prepare_coding_request:new Set(['title','requestText','purpose','taskId','note','paths','requestId']),
+ picard_prepare_coding_request:new Set(['title','requestText','purpose','taskId','note','paths','requestId','contract']),
  picard_submit_coding_request:new Set(['requestId']),
  picard_coding_request_status:new Set(['requestId']),
  picard_coding_request_result:new Set(['requestId'])
@@ -40,7 +46,7 @@ export function createConnector(client){
     if(name==='picard_coding_request_status')return toolResult(await client.status(args.requestId));
     if(name==='picard_coding_request_result')return toolResult(await client.result(args.requestId));
     return toolError('request_invalid');
-   }catch(error){return toolError(error instanceof CodingClientError?error.code:'connector_failed',error instanceof CodingClientError?error.requestId:undefined);}
+   }catch(error){return toolError(error instanceof CodingClientError?error.code:'connector_failed',error instanceof CodingClientError?error.requestId:undefined,error instanceof CodingClientError?error.preparation:undefined);}
   }
  };
 }

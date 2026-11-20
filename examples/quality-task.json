@@ -1,0 +1,14 @@
+{
+  "id": "status-not-acceptance",
+  "title": "Explain delivery status",
+  "requestText": "Explain what a completed Picard request establishes, in two sentences.",
+  "note": "Reviewed source facts for this synthetic example: Completed means the relay saved a provider answer. It does not establish factual correctness, test success, deployment, or owner acceptance. A partial answer must be identified as incomplete.",
+  "contract": {
+    "acceptanceCriteria": [
+      "Explain that completed indicates a saved answer.",
+      "Preserve the distinction from correctness, tests, deployment and owner acceptance."
+    ],
+    "constraints": ["Do not claim that any code was run or deployed."]
+  },
+  "checks": []
+}

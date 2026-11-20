@@ -53,6 +53,18 @@ test('authentication failure does not submit or retry',async()=>{
  await assert.rejects(client.prepare({title:'Synthetic helper',requestText:'Propose a label.',note:'Public note only.'}),error=>error instanceof CodingClientError&&error.code==='auth_failed');
  assert.equal(posts,0);
 });
+
+test('legacy connector freezes criteria with exact selected ranges and refuses changed recovery',async()=>{
+ const token=randomBytes(32).toString('base64url'),registry=parseMachineClientRegistry(JSON.stringify({v:1,clients:[{id:'quality-laptop',tokenSha256:createHash('sha256').update(token).digest('hex'),scopes:['workspace-coding'],revoked:false}]}));
+ const fixture=await workspaceFixture({authenticateMachine:async value=>matchMachineClient(registry,value)});
+ const dir=root();writeFileSync(join(dir,'helper.js'),'// unrelated\nexport const value=1;\n');const {client}=clientFor(fixture,dir,token);
+ try{
+  const input={title:'Review value',requestText:'Review the value.',contract:{acceptanceCriteria:['Preserve value 1.']},paths:[{path:'helper.js',startLine:2,endLine:2}]};
+  const d=await client.prepare(input);assert.match(d.payload.requestText,/Preserve value 1/);assert.equal(d.coverage[0].startLine,2);assert.equal(d.payload.context.includes('unrelated'),false);assert.equal(fixture.calls,0);
+  assert.equal((await client.prepare({...input,requestId:d.requestId})).recovered,true);
+  await assert.rejects(client.prepare({...input,requestId:d.requestId,contract:{acceptanceCriteria:['Change value 1.']}}),e=>e.code==='draft_conflict');
+ }finally{fixture.close();}
+});
 test('interrupted preparation returns its durable identity for exact recovery',async()=>{
  const dir=root(),journal=createJournal(join(dir,'journal'));
  const client=createCodingClient({origin:'https://fixture.invalid',token:'F'.repeat(43),workspaceRoot:dir,journal,transport:async()=>{throw new CodingClientError('transport_unconfirmed');}});
